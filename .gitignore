@@ -1,0 +1,10 @@
+/target
+.DS_Store
+# Runtime state (contains API key hashes and the blocked-key database)
+api_keys.json
+api_keys.json.tmp
+blocked.redb
+results-*.csv
+# Test material provided locally
+sample.txt
+pidkeychecker.lock
