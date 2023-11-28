@@ -74,5 +74,96 @@ impl ProductKey {
         Ok(Self { chars })
     }
 
+    pub fn format(&self) -> KeyFormat {
+        if self.chars.contains(&b'N') {
+            KeyFormat::Pkey2009
+        } else {
+            KeyFormat::Pkey2005
+        }
+    }
+
+    /// Canonical dashed representation.
+    pub fn as_string(&self) -> String {
+        let mut s = String::with_capacity(29);
+        for (i, c) in self.chars.iter().enumerate() {
+            if i > 0 && i % 5 == 0 {
+                s.push('-');
+            }
+            s.push(*c as char);
+        }
+        s
+    }
+
+    /// Compact, lossless numeric form (base 25 over the alphabet plus `N`),
+    /// used as the blocklist database key.
+    pub fn to_u128(&self) -> u128 {
+        self.chars.iter().fold(0u128, |acc, &c| {
+            let idx = ALPHABET.iter().position(|&a| a == c).unwrap_or(24) as u128;
+            acc * 25 + idx
+        })
+    }
+
+    pub fn from_u128(mut v: u128) -> Self {
+        let mut chars = [0u8; 25];
+        for c in chars.iter_mut().rev() {
+            let idx = (v % 25) as usize;
+            *c = if idx == 24 { b'N' } else { ALPHABET[idx] };
+            v /= 25;
+        }
+        Self { chars }
+    }
+
+    /// Last five characters, as shown by Windows ("Partial Product Key").
+    pub fn partial(&self) -> String {
+        String::from_utf8_lossy(&self.chars[20..]).into_owned()
+    }
+
+    /// Decode a `pkey2009` key. Returns `None` for legacy keys.
+    pub fn decode(&self) -> Option<DecodedKey> {
+        let n_pos = self.chars.iter().position(|&c| c == b'N')?;
+        let mut value: u128 = n_pos as u128;
+        for (i, &c) in self.chars.iter().enumerate() {
+            if i == n_pos {
+                continue;
+            }
+            let idx = ALPHABET.iter().position(|&a| a == c)? as u128;
+            value = value * 24 + idx;
+        }
+        Some(DecodedKey::from_raw(value))
+    }
+}
+
+
+}
+impl DecodedKey {
+    fn from_raw(value: u128) -> Self {
+        let checksum = ((value >> CHECKSUM_SHIFT) & CHECKSUM_MASK) as u16;
+        Self {
+            group: (value & 0xfffff) as u32,
+            serial: ((value >> 20) & 0x3fff_ffff) as u32,
+            security: ((value >> 50) & ((1u128 << 53) - 1)) as u64,
+            checksum,
+            upgrade: (value >> 113) & 1 == 1,
+            checksum_valid: compute_checksum(value) == checksum,
+        }
+    }
+
+    fn raw_without_checksum(&self) -> u128 {
+        (self.group as u128)
+            | ((self.serial as u128) << 20)
+            | ((self.security as u128) << 50)
+            | ((self.upgrade as u128) << 113)
+    }
+
+    /// Re-encode into a product key (used for tests and round-tripping).
+    pub fn encode(&self) -> ProductKey {
+        let base = self.raw_without_checksum();
+        let mut value = base | ((compute_checksum(base) as u128) << CHECKSUM_SHIFT);
+        let mut digits = [0u8; 25];
+        for d in digits.iter_mut().rev() {
+            *d = (value % 24) as u8;
+            value /= 24;
+        }
+        let n_pos = digits[0] as usize;
 
 }
