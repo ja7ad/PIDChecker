@@ -167,3 +167,38 @@ impl DecodedKey {
         let n_pos = digits[0] as usize;
 
 }
+            self.group,
+            self.serial / 1_000_000,
+            self.serial % 1_000_000,
+            now.ordinal(),
+            now.year()
+        )
+    }
+}
+
+fn compute_checksum(value: u128) -> u16 {
+    let cleared = value & !(CHECKSUM_MASK << CHECKSUM_SHIFT) & !(1u128 << 114);
+    (!crc32_mpeg2(&cleared.to_le_bytes()) & 0x3ff) as u16
+}
+
+const CRC_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut c = (i as u32) << 24;
+        let mut j = 0;
+        while j < 8 {
+            c = if c & 0x8000_0000 != 0 { (c << 1) ^ 0x04C1_1DB7 } else { c << 1 };
+            j += 1;
+        }
+        table[i] = c;
+        i += 1;
+    }
+    table
+};
+
+fn crc32_mpeg2(data: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &b in data {
+        crc = (crc << 8) ^ CRC_TABLE[(((crc >> 24) as u8) ^ b) as usize];
+    }
