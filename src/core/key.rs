@@ -165,6 +165,31 @@ impl DecodedKey {
             value /= 24;
         }
         let n_pos = digits[0] as usize;
+        let mut out = Vec::with_capacity(25);
+        for &d in &digits[1..] {
+            out.push(ALPHABET[d as usize]);
+        }
+        out.insert(n_pos, b'N');
+        let mut chars = [0u8; 25];
+        chars.copy_from_slice(&out);
+        ProductKey { chars }
+    }
+
+    /// Short product ID, e.g. `00330-80000-00000-AAxxx`.
+    ///
+    /// The trailing three digits are installation specific and cannot be
+    /// derived from the key alone.
+    pub fn product_id(&self) -> String {
+        let digits = format!("{:06}{:09}", self.group, self.serial);
+        format!("{}-{}-{}-AAxxx", &digits[0..5], &digits[5..10], &digits[10..15])
+    }
+
+    /// Extended PID in the same layout PidGenX produces.
+    pub fn extended_pid(&self, mpc: &str) -> String {
+        let now = chrono::Utc::now();
+        use chrono::Datelike;
+        format!(
+            "{mpc}-{:05}-{:03}-{:06}-03-1033-9200.0000-{:03}{}",
 
 }
             self.group,
