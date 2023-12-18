@@ -135,6 +135,26 @@ impl ProductKey {
 
 
 }
+
+impl std::fmt::Display for ProductKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.as_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct DecodedKey {
+    pub group: u32,
+    pub serial: u32,
+    pub security: u64,
+    pub checksum: u16,
+    pub upgrade: bool,
+    pub checksum_valid: bool,
+}
+
+const CHECKSUM_SHIFT: u32 = 103;
+const CHECKSUM_MASK: u128 = 0x3ff;
+
 impl DecodedKey {
     fn from_raw(value: u128) -> Self {
         let checksum = ((value >> CHECKSUM_SHIFT) & CHECKSUM_MASK) as u16;
@@ -191,7 +211,6 @@ impl DecodedKey {
         format!(
             "{mpc}-{:05}-{:03}-{:06}-03-1033-9200.0000-{:03}{}",
 
-}
             self.group,
             self.serial / 1_000_000,
             self.serial % 1_000_000,
