@@ -133,7 +133,35 @@ impl ProductKey {
     }
 }
 
-
+/// Find every well-formed product key embedded in arbitrary text (logs,
+/// e-mails, web pages), in order of appearance and without duplicates.
+///
+/// A key is five groups of five key characters separated by `-`, bounded by
+/// characters that cannot belong to a key.
+pub fn find_keys(text: &str) -> Vec<ProductKey> {
+    fn is_key_char(c: u8) -> bool {
+        c == b'N' || ALPHABET.contains(&c)
+    }
+    let bytes: Vec<u8> = text.bytes().map(|b| b.to_ascii_uppercase()).collect();
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut i = 0;
+    while i + 29 <= bytes.len() {
+        let boundary_before = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+        let window = &bytes[i..i + 29];
+        let shape_ok = window.iter().enumerate().all(|(j, &c)| if j % 6 == 5 { c == b'-' } else { is_key_char(c) });
+        let boundary_after = bytes.get(i + 29).is_none_or(|c| !c.is_ascii_alphanumeric());
+        if boundary_before && shape_ok && boundary_after
+            && let Ok(key) = ProductKey::parse(std::str::from_utf8(window).unwrap_or_default()) {
+                if seen.insert(key.clone()) {
+                    out.push(key);
+                }
+                i += 29;
+                continue;
+            }
+        i += 1;
+    }
+    out
 }
 
 impl std::fmt::Display for ProductKey {
@@ -210,7 +238,6 @@ impl DecodedKey {
         use chrono::Datelike;
         format!(
             "{mpc}-{:05}-{:03}-{:06}-03-1033-9200.0000-{:03}{}",
-
             self.group,
             self.serial / 1_000_000,
             self.serial % 1_000_000,
