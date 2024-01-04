@@ -273,3 +273,68 @@ fn crc32_mpeg2(data: &[u8]) -> u32 {
     for &b in data {
         crc = (crc << 8) ^ CRC_TABLE[(((crc >> 24) as u8) ^ b) as usize];
     }
+    crc
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Public generic / KMS client keys published by Microsoft.
+    const KNOWN: &[(&str, u32, u32)] = &[
+        ("W269N-WFGWX-YVC9B-4J6C9-T83GX", 3311, 1),
+        ("NPPR9-FWDCX-D2C8J-H872K-2YT43", 3290, 3),
+        ("TX9XD-98N7V-6WMQ6-BX7FG-H8Q99", 3263, 1),
+        ("VK7JG-NPHTM-C97JM-9MPGT-3V66T", 3308, 0),
+    ];
+
+    #[test]
+    fn decodes_known_keys() {
+        for (k, group, serial) in KNOWN {
+            let key = ProductKey::parse(k).unwrap();
+            let d = key.decode().unwrap();
+            assert_eq!(d.group, *group, "{k}");
+            assert_eq!(d.serial, *serial, "{k}");
+            assert!(d.checksum_valid, "{k}");
+            assert_eq!(d.encode().as_string(), *k);
+        }
+    }
+
+    #[test]
+    fn detects_bad_checksum() {
+        let key = ProductKey::parse("W269N-WFGWX-YVC9B-4J6C9-T83GY").unwrap();
+        assert!(!key.decode().unwrap().checksum_valid);
+    }
+
+    #[test]
+    fn parse_errors() {
+        assert_eq!(ProductKey::parse("ABC"), Err(KeyParseError::InvalidChar('A')));
+        assert_eq!(ProductKey::parse("BBBBB"), Err(KeyParseError::Length(5)));
+        assert!(matches!(ProductKey::parse("NNBBB-BBBBB-BBBBB-BBBBB-BBBBB"), Err(KeyParseError::MultipleN)));
+        let k = ProductKey::parse("w269nwfgwxyvc9b4j6c9t83gx").unwrap();
+        assert_eq!(k.as_string(), "W269N-WFGWX-YVC9B-4J6C9-T83GX");
+    }
+
+    #[test]
+    fn u128_roundtrip() {
+        for k in ["W269N-WFGWX-YVC9B-4J6C9-T83GX", "FJ82H-XT6CR-J8D7P-XQJJ2-GPDD4", "NBBBB-BBBBB-BBBBB-BBBBB-BBBBB"] {
+            let key = ProductKey::parse(k).unwrap();
+            assert_eq!(ProductKey::from_u128(key.to_u128()), key);
+        }
+    }
+
+    #[test]
+    fn finds_keys_in_free_text() {
+        let text = "密钥：W269N-WFGWX-YVC9B-4J6C9-T83GX描述：Pro\nkey=nppr9-fwdcx-d2c8j-h872k-2yt43, dup W269N-WFGWX-YVC9B-4J6C9-T83GX \
+                    bad: XW269N-WFGWX-YVC9B-4J6C9-T83GX AAAAA-BBBBB-CCCCC-DDDDD-EEEEE";
+        let keys: Vec<String> = find_keys(text).iter().map(|k| k.as_string()).collect();
+        assert_eq!(keys, ["W269N-WFGWX-YVC9B-4J6C9-T83GX", "NPPR9-FWDCX-D2C8J-H872K-2YT43"]);
+    }
+
+    #[test]
+    fn product_id_layout() {
+        let d = ProductKey::parse("VK7JG-NPHTM-C97JM-9MPGT-3V66T").unwrap().decode().unwrap();
+        assert_eq!(d.product_id(), "00330-80000-00000-AAxxx");
+        assert!(d.extended_pid("XXXXX").starts_with("XXXXX-03308-000-000000-03-1033-9200.0000-"));
+    }
+}
