@@ -78,3 +78,75 @@ mod imp {
             let _guard = self.lock.lock();
             // SAFETY: buffers are sized as PidGenX expects (matches the original tool).
             let hr = unsafe {
+                (self.func)(k.as_ptr(), p.as_ptr(), m.as_ptr(), 0, pid.as_mut_ptr(), dpid.as_mut_ptr(), dpid4.as_mut_ptr())
+            };
+            if hr != 0 {
+                return (hr, None);
+            }
+            let result = LegacyResult {
+                product_id: if pid[1] == 0 {
+                    read_wide(&pid, 0, 100)
+                } else {
+                    String::from_utf8_lossy(pid.split(|&b| b == 0).next().unwrap_or_default()).into_owned()
+                },
+                extended_pid: read_wide(&dpid4, 8, 96),
+                act_config_id: read_wide(&dpid4, 136, 72),
+                edition_type: read_wide(&dpid4, 280, 256),
+                sub_type: read_wide(&dpid4, 888, 64),
+                license_type: read_wide(&dpid4, 1016, 64),
+                channel: read_wide(&dpid4, 1144, 64),
+                source: 0,
+            };
+            (hr, Some(result))
+        }
+    }
+
+    /// Several independent PidGenX instances (private copies of the DLL).
+    pub struct Pool {
+        instances: Vec<PidGenX>,
+        free: Mutex<Vec<usize>>,
+        available: parking_lot::Condvar,
+        pub path: PathBuf,
+        copies_dir: Option<PathBuf>,
+    }
+
+    impl Pool {
+        pub fn load(configured: &Path, size: usize) -> Result<Self> {
+            let (first, path) = load_any(configured)?;
+            let mut instances = vec![first];
+            let mut copies_dir = None;
+            if size > 1 {
+                // Windows maps a DLL once per path, so each instance needs its own file.
+                let dir = std::env::temp_dir().join(format!("pidkeychecker-pgx-{}", std::process::id()));
+                std::fs::create_dir_all(&dir)?;
+                for i in 1..size {
+                    let copy = dir.join(format!("pidgenx-{i}.dll"));
+                    std::fs::copy(&path, &copy)?;
+                    match PidGenX::load(&copy) {
+                        Ok(p) => instances.push(p),
+                        Err(e) => {
+                            tracing::warn!("pidgenx instance {i}: {e:#}");
+                            break;
+                        }
+                    }
+                }
+                copies_dir = Some(dir);
+            }
+            let free = Mutex::new((0..instances.len()).rev().collect());
+            Ok(Self { instances, free, available: parking_lot::Condvar::new(), path, copies_dir })
+        }
+
+        pub fn size(&self) -> usize {
+            self.instances.len()
+        }
+
+        /// Try `files` in order on one free instance; returns the index into
+        /// `files` and the result of the first success, or the last HRESULT.
+        pub fn check_first(&self, key: &str, files: &[&Path]) -> Result<(usize, LegacyResult), i32> {
+            let idx = self.acquire();
+            let inst = &self.instances[idx];
+            let mut last_hr = 0;
+            let mut out = Err(0);
+            for (i, file) in files.iter().enumerate() {
+
+}
