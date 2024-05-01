@@ -148,5 +148,61 @@ mod imp {
             let mut last_hr = 0;
             let mut out = Err(0);
             for (i, file) in files.iter().enumerate() {
+                let t = std::time::Instant::now();
+                let (hr, res) = inst.check(key, file);
+                tracing::debug!("pidgenx#{idx} {} -> 0x{:08X} in {:?}", file.display(), hr as u32, t.elapsed());
+                if let Some(r) = res {
+                    out = Ok((i, r));
+                    break;
+                }
+                last_hr = hr;
+            }
+            self.release(idx);
+            out.map_err(|_: i32| last_hr)
+        }
 
+        fn acquire(&self) -> usize {
+            let mut free = self.free.lock();
+            loop {
+                if let Some(i) = free.pop() {
+                    return i;
+                }
+                self.available.wait(&mut free);
+            }
+        }
+
+        fn release(&self, idx: usize) {
+            self.free.lock().push(idx);
+            self.available.notify_one();
+        }
+    }
+
+    impl Drop for Pool {
+        fn drop(&mut self) {
+            self.instances.clear();
+            if let Some(dir) = &self.copies_dir {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+    }
+
+    /// Load the configured DLL, falling back to the system copy when it is
+    /// missing or built for another architecture (e.g. an ARM64 DLL in an x64 build).
+    pub fn load_any(configured: &Path) -> Result<(PidGenX, PathBuf)> {
+        let system = std::env::var_os("WINDIR").map(|w| Path::new(&w).join("System32").join("pidgenx.dll"));
+        let mut last = anyhow::anyhow!("pidgenx.dll not found");
+        for path in std::iter::once(configured.to_path_buf()).chain(system) {
+            if !path.exists() {
+                continue;
+            }
+            match PidGenX::load(&path) {
+                Ok(p) => return Ok((p, path)),
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
 }
+
+#[cfg(windows)]
+pub use imp::{load_any, PidGenX, Pool};
