@@ -1,3 +1,4 @@
+pub mod checker;
 pub mod codes;
 pub mod database;
 pub mod key;
