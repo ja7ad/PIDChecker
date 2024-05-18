@@ -158,5 +158,165 @@ struct ResultCache {
 impl ResultCache {
     fn get(&self, key: &(String, bool), ttl: Duration) -> Option<KeyReport> {
         let (at, r) = self.entries.get(key)?;
+        (at.elapsed() < ttl).then(|| r.clone())
+    }
+
+    fn insert(&mut self, key: (String, bool), report: KeyReport, ttl: Duration, max: usize) {
+        if self.entries.len() >= max {
+            self.entries.retain(|_, (at, _)| at.elapsed() < ttl);
+        }
+        if self.entries.len() >= max {
+            // Evict the oldest tenth.
+            let mut ages: Vec<_> = self.entries.iter().map(|(k, (at, _))| (*at, k.clone())).collect();
+            ages.sort_unstable_by_key(|(at, _)| *at);
+            for (_, k) in ages.into_iter().take(max / 10 + 1) {
+                self.entries.remove(&k);
+            }
+        }
+        self.entries.insert(key, (Instant::now(), report));
+    }
+}
+
+pub struct Checker {
+    db: KeyDatabase,
+    blocklist: Blocklist,
+    mak: MakClient,
+    settings: parking_lot::RwLock<RuntimeSettings>,
+    cache: parking_lot::Mutex<ResultCache>,
+    #[cfg(windows)]
+    pidgenx: Option<super::pidgenx::Pool>,
+    /// Legacy sources ordered most-recently-matched first.
+    #[cfg(windows)]
+    legacy_order: parking_lot::Mutex<Vec<usize>>,
+}
+
+impl Checker {
+    pub fn new(cfg: &CheckerConfig) -> Result<Self> {
+        let db = KeyDatabase::load(&cfg.data_dir)
+            .map_err(|e| anyhow::anyhow!("loading pkeyconfig data from {}: {e}", cfg.data_dir.display()))?;
+        for e in &db.errors {
+            tracing::warn!("{e}");
+        }
+        let blocklist = Blocklist::open(&cfg.blocklist_db)?;
+        let mak = MakClient::new(
+            Duration::from_secs(cfg.online_timeout_secs),
+            cfg.online_chunk_size,
+            cfg.online_concurrency,
+        )?;
+        #[cfg(windows)]
+        let pidgenx = if cfg.pidgenx_enabled {
+            let n = match cfg.pidgenx_instances {
+                0 => std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4),
+                n => n,
+            }
+            .clamp(1, 16);
+            match super::pidgenx::Pool::load(&cfg.pidgenx_path, n) {
+                Ok(pool) => {
+                    tracing::info!("pidgenx backend loaded from {} ({} instances)", pool.path.display(), pool.size());
+                    Some(pool)
+                }
+                Err(e) => {
+                    tracing::warn!("pidgenx backend unavailable: {e:#}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        Ok(Self {
+            blocklist,
+            mak,
+            settings: parking_lot::RwLock::new(RuntimeSettings::from_config(cfg)),
+            cache: parking_lot::Mutex::new(ResultCache::default()),
+            #[cfg(windows)]
+            legacy_order: parking_lot::Mutex::new(db.legacy_sources.clone()),
+            db,
+            #[cfg(windows)]
+            pidgenx,
+        })
+    }
+
+    pub fn stats(&self) -> DbStats {
+        self.db.stats()
+    }
+
+    pub fn blocklist(&self) -> &Blocklist {
+        &self.blocklist
+    }
+
+    pub fn online_default(&self) -> bool {
+        self.settings.read().online_default
+    }
+
+    pub fn settings(&self) -> RuntimeSettings {
+        self.settings.read().clone()
+    }
+
+    /// Apply changed settings without restarting (cache, auto-block, online defaults).
+    pub fn apply_settings(&self, cfg: &CheckerConfig) {
+        let new = RuntimeSettings::from_config(cfg);
+        if !new.cache_enabled {
+            self.clear_cache();
+        }
+        *self.settings.write() = new;
+    }
+
+    pub fn cache_len(&self) -> usize {
+        self.cache.lock().entries.len()
+    }
+
+    pub fn clear_cache(&self) {
+        self.cache.lock().entries.clear();
+    }
+
+    pub fn legacy_supported(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.pidgenx.is_some()
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+
+    /// Offline validation of a single key. Pure CPU work, typically a few µs.
+    pub fn check_offline(&self, input: &str) -> KeyReport {
+        let started = Instant::now();
+        let mut report = self.validate(input);
+        self.apply_blocklist(&mut report);
+        if report.status == KeyStatus::RevokedRange && !report.blocked && self.settings.read().record_revoked {
+            self.record(&report, "revoked-range", None);
+            self.apply_blocklist(&mut report);
+        }
+        report.elapsed_us = started.elapsed().as_micros() as u64;
+        report
+    }
+
+    fn apply_blocklist(&self, report: &mut KeyReport) {
+        let Some(key) = report.key.as_deref().and_then(|k| ProductKey::parse(k).ok()) else { return };
+        if let Some(rec) = self.blocklist.get(&key) {
+            report.blocked = true;
+            report.blocked_reason = Some(match rec.error_code {
+                Some(code) => format!("Blocked by Microsoft ({code}), recorded {}", rec.added_at.format("%Y-%m-%d")),
+                None => format!("In blocklist database ({})", rec.source),
+            });
+        }
+    }
+
+    fn record(&self, report: &KeyReport, source: &str, error_code: Option<String>) {
+        let Some(k) = report.key.as_deref().and_then(|k| ProductKey::parse(k).ok()) else { return };
+        let rec = BlockRecord { source: source.into(), error_code, added_at: chrono::Utc::now() };
+        match self.blocklist.insert(&k, &rec) {
+            Ok(true) => tracing::info!("recorded {k} in blocklist ({source})"),
+            Ok(false) => {}
+            Err(e) => tracing::warn!("could not update blocklist: {e:#}"),
+        }
+    }
+
+    fn validate(&self, input: &str) -> KeyReport {
+        let key = match ProductKey::parse(input) {
+            Ok(k) => k,
+            Err(e) => return KeyReport::new(input, KeyStatus::InvalidFormat, e.to_string()),
 
 }
