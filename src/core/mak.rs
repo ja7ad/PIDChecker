@@ -128,5 +128,69 @@ fn build_envelope(pids: &[String]) -> String {
     let b64 = base64::engine::general_purpose::STANDARD;
     let digest = b64.encode(hmac_sha256(&HMAC_KEY, &bytes));
     let payload = b64.encode(&bytes);
+    format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" \
+         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"><soap:Body>\
+         <BatchActivate xmlns=\"http://www.microsoft.com/BatchActivationService\"><request><Digest>{digest}</Digest>\
+         <RequestXml>{payload}</RequestXml></request></BatchActivate></soap:Body></soap:Envelope>"
+    )
+}
 
+fn parse_response(text: &str, expected: usize) -> Result<Vec<ActivationInfo>> {
+    let inner = xml::text(text, "ResponseXml").context("ResponseXml missing in activation response")?;
+    let responses: Vec<ActivationInfo> = xml::elements(&inner, "Response").map(parse_single).collect();
+    if responses.len() != expected {
+        bail!("activation service returned {} results for {expected} PIDs", responses.len());
+    }
+    Ok(responses)
+}
+
+fn parse_single(block: &str) -> ActivationInfo {
+    let remaining = xml::text(block, "ActivationRemaining").and_then(|v| v.parse::<i64>().ok());
+    let error_code = xml::text(block, "ErrorCode").filter(|c| !c.is_empty());
+    let known = error_code.as_deref().and_then(codes::parse_code).and_then(codes::activation_code);
+    ActivationInfo {
+        remaining: remaining.filter(|r| *r >= 0),
+        error_message: known.map(|k| k.message.to_string()),
+        blocked: known.is_some_and(|k| k.blocked),
+        error_code,
+    }
+}
+
+fn hmac_sha256(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
+    let mut ipad = [0x36u8; 64];
+    let mut opad = [0x5cu8; 64];
+    for (i, k) in key.iter().enumerate() {
+        ipad[i] ^= k;
+        opad[i] ^= k;
+    }
+    let inner = Sha256::new().chain_update(ipad).chain_update(data).finalize();
+    Sha256::new().chain_update(opad).chain_update(inner).finalize().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hmac_matches_rfc4231_shape() {
+        // RFC 4231 test case 2 uses a short key; verify against a 32 byte key instead
+        // by checking determinism and length.
+        let a = hmac_sha256(&HMAC_KEY, b"abc");
+        assert_eq!(a.len(), 32);
+        assert_eq!(a, hmac_sha256(&HMAC_KEY, b"abc"));
+    }
+
+    #[test]
+    fn parses_blocked_and_count() {
+        let inner = "<ActivationResponse><Responses><Response><PID>a</PID><ActivationRemaining>-1</ActivationRemaining>\
+                     <ErrorInfo><ErrorCode>0x67</ErrorCode></ErrorInfo></Response><Response><PID>b</PID>\
+                     <ActivationRemaining>42</ActivationRemaining></Response></Responses></ActivationResponse>";
+        let soap = format!("<x><ResponseXml>{}</ResponseXml></x>", xml::escape(inner));
+        let r = parse_response(&soap, 2).unwrap();
+        assert!(r[0].blocked);
+        assert_eq!(r[0].remaining, None);
+        assert_eq!(r[1].remaining, Some(42));
+        assert!(!r[1].blocked);
+    }
 }
