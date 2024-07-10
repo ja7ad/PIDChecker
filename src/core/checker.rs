@@ -318,5 +318,105 @@ impl Checker {
         let key = match ProductKey::parse(input) {
             Ok(k) => k,
             Err(e) => return KeyReport::new(input, KeyStatus::InvalidFormat, e.to_string()),
+        };
+        let format = key.format();
+        let mut report = match format {
+            KeyFormat::Pkey2009 => self.validate_2009(input, &key),
+            KeyFormat::Pkey2005 => self.validate_legacy(input, &key),
+        };
+        report.key = Some(key.as_string());
+        report.format = Some(format);
+        if let Some(d) = report.details.as_mut() {
+            d.partial_key = key.partial();
+        }
+        report
+    }
+
+    fn validate_2009(&self, input: &str, key: &ProductKey) -> KeyReport {
+        let decoded = key.decode().expect("pkey2009 key decodes");
+        if !decoded.checksum_valid {
+            return KeyReport::new(input, KeyStatus::InvalidChecksum, "Key checksum does not match");
+        }
+        let Some(m) = self.db.lookup(decoded.group, decoded.serial) else {
+            let mut r = KeyReport::new(input, KeyStatus::UnknownProduct, "No pkeyconfig contains this key's group");
+            r.details = Some(KeyDetails {
+                crypto_id: decoded.group,
+                crypto_id_hex: format!("{:x}", decoded.group),
+                serial: Some(decoded.serial),
+                ..Default::default()
+            });
+            return r;
+        };
+        let cfg = &m.entry.config;
+        let (status, message) = match m.range {
+            Some(r) if r.is_valid => (KeyStatus::Valid, "Valid key"),
+            Some(_) => (KeyStatus::RevokedRange, "Key belongs to a range marked invalid by Microsoft"),
+            None => (KeyStatus::Invalid, "Serial is outside every known key range"),
+        };
+        let mut report = KeyReport::new(input, status, message);
+        report.details = Some(KeyDetails {
+            product_id: decoded.product_id(),
+            extended_pid: decoded.extended_pid("XXXXX"),
+            sku_id: cfg.act_config_id.clone(),
+            description: cfg.description.clone(),
+            edition_id: cfg.edition_id.clone(),
+            key_type: cfg.key_type.clone(),
+            license_note: license_note(&cfg.key_type).to_string(),
+            channel: m.range.map(|r| r.eula_type.clone()).unwrap_or_default(),
+            part_number: m.range.map(|r| r.part_number.clone()).unwrap_or_default(),
+            crypto_id: decoded.group,
+            crypto_id_hex: format!("{:x}", decoded.group),
+            serial: Some(decoded.serial),
+            security_value: Some(format!("{:x}", decoded.security)),
+            upgrade: decoded.upgrade,
+            is_randomized: cfg.is_randomized,
+            pkeyconfig: self.db.source(m.entry.sources[0]).map(|s| s.name.clone()).unwrap_or_default(),
+            product: self.db.source(m.entry.sources[0]).map(|s| s.product.clone()).unwrap_or_default(),
+            category: self.db.source(m.entry.sources[0]).map(|s| s.category.clone()).unwrap_or_default(),
+            algorithm: self.db.algorithm(decoded.group).unwrap_or("msft:rm/algorithm/pkey/2009").to_string(),
+            partial_key: String::new(),
+        });
+        report
+    }
+
+    #[cfg(not(windows))]
+    fn validate_legacy(&self, input: &str, _key: &ProductKey) -> KeyReport {
+        KeyReport::new(
+            input,
+            KeyStatus::Unsupported,
+            "Legacy (pkey2005) key: validation requires pidgenx.dll on Windows",
+        )
+    }
+
+    #[cfg(windows)]
+    fn validate_legacy(&self, input: &str, key: &ProductKey) -> KeyReport {
+        let Some(pgx) = &self.pidgenx else {
+            return KeyReport::new(input, KeyStatus::Unsupported, "Legacy (pkey2005) key: pidgenx.dll not available");
+        };
+        let key_str = key.as_string();
+        let order = self.legacy_order.lock().clone();
+        let files: Vec<&std::path::Path> = order.iter().map(|&i| self.db.sources[i].path.as_path()).collect();
+        let started = Instant::now();
+        let outcome = pgx.check_first(&key_str, &files);
+        tracing::debug!("pidgenx: {key_str} resolved in {:?}", started.elapsed());
+        let last_hr = match outcome {
+            Ok((pos, res)) => {
+                let src = order[pos];
+                if pos > 0 {
+                    // Most-recently-matched first: batches of similar keys get faster.
+                    let mut o = self.legacy_order.lock();
+                    if let Some(i) = o.iter().position(|&x| x == src) {
+                        let v = o.remove(i);
+                        o.insert(0, v);
+                    }
+                }
+                let entry = self.db.by_act_config_id(&res.act_config_id);
+                let mut report = KeyReport::new(input, KeyStatus::Valid, "Valid key");
+                report.details = Some(KeyDetails {
+                    product_id: res.product_id,
+                    extended_pid: res.extended_pid,
+                    sku_id: super::pkeyconfig::normalize_guid(&res.act_config_id),
+                    description: entry.map(|e| e.config.description.clone()).unwrap_or_else(|| res.edition_type.clone()),
+                    edition_id: entry.map(|e| e.config.edition_id.clone()).unwrap_or(res.edition_type),
 
 }
