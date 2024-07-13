@@ -418,5 +418,85 @@ impl Checker {
                     sku_id: super::pkeyconfig::normalize_guid(&res.act_config_id),
                     description: entry.map(|e| e.config.description.clone()).unwrap_or_else(|| res.edition_type.clone()),
                     edition_id: entry.map(|e| e.config.edition_id.clone()).unwrap_or(res.edition_type),
+                    license_note: license_note(&res.license_type).to_string(),
+                    key_type: res.license_type,
+                    channel: res.channel,
+                    part_number: res.sub_type,
+                    crypto_id: entry.map(|e| e.config.ref_group_id).unwrap_or_default(),
+                    crypto_id_hex: entry.map(|e| format!("{:x}", e.config.ref_group_id)).unwrap_or_default(),
+                    pkeyconfig: self.db.sources[src].name.clone(),
+                    product: self.db.sources[src].product.clone(),
+                    category: self.db.sources[src].category.clone(),
+                    algorithm: "msft:rm/algorithm/pkey/2005".into(),
+                    ..Default::default()
+                });
+                return report;
+            }
+            Err(hr) => hr,
+        };
+        let msg = super::codes::lookup(&last_hr.to_string())
+            .map(|c| c.message.to_string())
+            .unwrap_or_else(|| format!("Rejected by every pkeyconfig (0x{:08X})", last_hr as u32));
+        KeyReport::new(input, KeyStatus::Invalid, msg)
+    }
+
+    /// Check many keys. Offline validation runs in parallel; online lookups are
+    /// batched into as few service calls as possible.
+    pub async fn check_many(self: &Arc<Self>, inputs: Vec<String>, opts: CheckOptions) -> Vec<KeyReport> {
+        let settings = self.settings();
+        let cache_key = |input: &str| ProductKey::parse(input).ok().map(|k| (k.as_string(), opts.online));
+
+        // Serve what we can from the cache.
+        let mut out: Vec<Option<KeyReport>> = vec![None; inputs.len()];
+        let mut misses = Vec::new();
+        {
+            let cache = self.cache.lock();
+            for (i, input) in inputs.iter().enumerate() {
+                let hit = settings.cache_enabled.then(|| cache_key(input)).flatten().and_then(|k| cache.get(&k, settings.cache_ttl));
+                match hit {
+                    Some(mut r) => {
+                        r.cached = true;
+                        r.input = input.trim().to_string();
+                        out[i] = Some(r);
+                    }
+                    None => misses.push(i),
+                }
+            }
+        }
+        for r in out.iter_mut().flatten() {
+            // The blocklist may have changed since the result was cached.
+            r.blocked = false;
+            r.blocked_reason = None;
+            if let Some(a) = &r.activation
+                && a.blocked {
+                    r.blocked = true;
+                    r.blocked_reason = Some(format!("Blocked by Microsoft ({})", a.error_code.as_deref().unwrap_or("?")));
+                }
+            if !r.blocked {
+                self.apply_blocklist(r);
+            }
+        }
+
+        let this = self.clone();
+        let todo: Vec<String> = misses.iter().map(|&i| inputs[i].clone()).collect();
+        let mut fresh = if todo.len() > 32 {
+            tokio::task::spawn_blocking(move || todo.par_iter().map(|k| this.check_offline(k)).collect())
+                .await
+                .unwrap_or_default()
+        } else {
+            todo.iter().map(|k| this.check_offline(k)).collect::<Vec<_>>()
+        };
+        if opts.online {
+            self.apply_online(&mut fresh, &settings).await;
+        }
+
+        if settings.cache_enabled {
+            let mut cache = self.cache.lock();
+            for r in &fresh {
+                // Do not cache transient network failures.
+                if r.activation_error.is_some() {
+                    continue;
+                }
+                if let Some(k) = cache_key(&r.input) {
 
 }
