@@ -498,5 +498,65 @@ impl Checker {
                     continue;
                 }
                 if let Some(k) = cache_key(&r.input) {
+                    cache.insert(k, r.clone(), settings.cache_ttl, settings.cache_max_entries);
+                }
+            }
+        }
+        for (i, r) in misses.into_iter().zip(fresh) {
+            out[i] = Some(r);
+        }
+        out.into_iter().flatten().collect()
+    }
+
+    pub async fn check_one(self: &Arc<Self>, input: String, opts: CheckOptions) -> KeyReport {
+        self.check_many(vec![input], opts).await.pop().expect("one report")
+    }
+
+    async fn apply_online(&self, reports: &mut [KeyReport], settings: &RuntimeSettings) {
+        let started = Instant::now();
+        let targets: Vec<(usize, String)> = reports
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.wants_online(&settings.online_types))
+            .filter_map(|(i, r)| {
+                let epid = r.details.as_ref()?.extended_pid.replace("XXXXX", MPC);
+                Some((i, epid))
+            })
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let pids: Vec<String> = targets.iter().map(|(_, p)| p.clone()).collect();
+        let results = self.mak.query(&pids).await;
+        let elapsed = started.elapsed().as_micros() as u64;
+        for (idx, pid) in targets {
+            let report = &mut reports[idx];
+            report.elapsed_us += elapsed;
+            match results.get(&pid) {
+                Some(Ok(info)) => {
+                    if info.blocked {
+                        report.blocked = true;
+                        report.blocked_reason = Some(format!(
+                            "Blocked by Microsoft ({})",
+                            info.error_code.as_deref().unwrap_or("?")
+                        ));
+                        if settings.record_blocked {
+                            self.record(report, "microsoft", info.error_code.clone());
+                        }
+                    }
+                    report.activation = Some(info.clone());
+                }
+                Some(Err(e)) => report.activation_error = Some(e.clone()),
+                None => report.activation_error = Some("no response".into()),
+            }
+        }
+    }
+}
+
+/// Plain-language explanation of a `ProductKeyType`, per Microsoft's
+/// licensing-and-activation documentation.
+pub fn license_note(key_type: &str) -> &'static str {
+    let t = key_type.to_ascii_lowercase();
+    if t.contains("gvlk") || t.contains("kms_client") || t.contains("kmsclient") {
 
 }
