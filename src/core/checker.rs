@@ -558,5 +558,55 @@ impl Checker {
 pub fn license_note(key_type: &str) -> &'static str {
     let t = key_type.to_ascii_lowercase();
     if t.contains("gvlk") || t.contains("kms_client") || t.contains("kmsclient") {
+        "Public KMS client setup key: activates only against a KMS host or Active Directory, never with Microsoft"
+    } else if t.contains("csvlk") || t.contains("kms_host") || t.contains("kmshost") {
+        "KMS host key (CSVLK): activates a KMS host, limited to 10 activations on up to 6 hosts"
+    } else if t.contains("mak") {
+        "Multiple Activation Key: activates online or by phone with Microsoft, for a limited number of activations"
+    } else if t.contains("oem") {
+        "OEM key: tied to the manufacturer's hardware (BIOS/firmware licensing)"
+    } else if t.contains("retail") {
+        "Retail key: activates with Microsoft; cannot be activated through KMS"
+    } else if t.contains("volume") {
+        "Volume license key"
+    } else {
+        ""
+    }
+}
+
+/// Render a report in the classic text layout of the original tool.
+pub fn render_text(r: &KeyReport) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let mut line = |label: &str, value: &str| {
+        let _ = writeln!(s, "{label:<15}: {value}");
+    };
+    line("Key", r.key.as_deref().unwrap_or(&r.input));
+    line("Key Status", if r.valid { "Valid" } else { r.status.label() });
+    if !r.valid {
+        line("Reason", &r.message);
+    }
+    if let Some(d) = &r.details {
+        if !d.product.is_empty() {
+            line("Product", &format!("{} [{}]", d.product, d.category));
+            line("PKeyConfig", &d.pkeyconfig);
+        }
+        if !d.product_id.is_empty() {
+            line("Product ID", &d.product_id);
+            line("Extended PID", &d.extended_pid);
+            line("SKU ID", &d.sku_id);
+            line("Description", &d.description);
+            line("Edition ID", &d.edition_id);
+            line("License Type", &d.key_type);
+            if !d.license_note.is_empty() {
+                line("License Note", &d.license_note);
+            }
+            line("Channel", &d.channel);
+            line("Part Number", &d.part_number);
+        }
+        line("Crypto ID", &format!("{} (0x{})", d.crypto_id, d.crypto_id_hex));
+        if let Some(serial) = d.serial {
+            line("Serial", &serial.to_string());
+        }
 
 }
