@@ -608,5 +608,25 @@ pub fn render_text(r: &KeyReport) -> String {
         if let Some(serial) = d.serial {
             line("Serial", &serial.to_string());
         }
+        if let Some(sec) = &d.security_value {
+            line("Security Value", &format!("0x{sec}"));
+        }
+        if d.upgrade {
+            line("Upgrade", "Yes");
+        }
+    }
+    if let Some(a) = &r.activation {
+        let count = match (a.remaining, &a.error_code) {
+            (Some(n), _) => n.to_string(),
+            (None, Some(code)) => format!("Not available ({code})"),
+            (None, None) => "Not available".into(),
+        };
+        line("Activ. Count", &format!("{count}{}", if r.cached { " (cached)" } else { "" }));
+        if let Some(m) = &a.error_message {
+            line("Service Note", m);
+        }
+    } else if let Some(e) = &r.activation_error {
+        line("Activ. Count", &format!("Error: {e}"));
+    }
 
 }
