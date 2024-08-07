@@ -1,0 +1,452 @@
+[
+  {
+    "code": "0x8004FE21",
+    "name": null,
+    "message": "This computer is not running genuine Windows.",
+    "cause": "Unlicensed language packs (MUI) installed, malware modifying Windows, or corrupted system files.",
+    "resolution": "Reinstall the operating system.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0x80070005",
+    "name": null,
+    "message": "Access denied. The requested action requires elevated privileges.",
+    "cause": "Activation run from a non-elevated prompt (UAC), or on domain-joined machines the SELF account lacks DCOM permissions / Network Service lacks registry permissions.",
+    "resolution": "Run slmgr from an elevated command prompt; if it persists, restore SELF/Network Service permissions.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; error-0x80070005-access-denied.md; windows-not-genuine-error.md"
+  },
+  {
+    "code": "0x8007000D",
+    "name": null,
+    "message": "The data is invalid.",
+    "cause": "System account permissions on HKLM\\SYSTEM\\CurrentControlSet\\Enum\\Root (or subkeys) were altered.",
+    "resolution": "Grant the System account at least Enumerate Subkeys on that registry path and its subkeys.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "0x8007000d-activate-machine.md"
+  },
+  {
+    "code": "0x8007007B",
+    "name": null,
+    "message": "DNS name does not exist.",
+    "cause": "KMS client cannot find the KMS SRV resource records in DNS (generic meaning: file/directory/volume label syntax incorrect).",
+    "resolution": "Troubleshoot KMS/DNS (check _vlmcs._tcp SRV records) or point the client at a KMS host; ensure a correct KMS client setup key is installed.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; troubleshoot-adba-clients-not-activate.md"
+  },
+  {
+    "code": "0x80070490",
+    "name": null,
+    "message": "The product key you entered did not work.",
+    "cause": "The MAK isn't valid, or a known Windows Server 2019 issue interfered with authenticating the key.",
+    "resolution": "Install the key with 'slmgr -ipk <key>' from an elevated prompt, and verify the key.",
+    "category": "key_invalid",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0x800706BA",
+    "name": null,
+    "message": "The RPC server is unavailable.",
+    "cause": "KMS host firewall not configured or stale DNS SRV records.",
+    "resolution": "Allow TCP 1688 on the KMS host, verify SRV records point to a valid KMS host, and check network connectivity.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0x8007139F",
+    "name": null,
+    "message": "KMS contact failure (Event 8198).",
+    "cause": "KMS client's SPP service can't contact the KMS host (firewall/NSG, forced tunneling/VPN, DNS).",
+    "resolution": "Set the KMS host explicitly, exempt KMS traffic from tunneling, restart sppsvc, and verify port 1688 and DNS.",
+    "category": "kms",
+    "blocked": false,
+    "source": "activation-event-8198-error-0xc0020017-0x8007139f-kms-contact-failure.md"
+  },
+  {
+    "code": "0x8007232A",
+    "name": null,
+    "message": "DNS server failure.",
+    "cause": "Client can't reach a DNS server to resolve the KMS host (e.g., port 53 blocked).",
+    "resolution": "Troubleshoot network connectivity and DNS, or activate without DNS by specifying the KMS host.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; activation-error-0x8007232a-dns-server-failure.md"
+  },
+  {
+    "code": "0x8007232B",
+    "name": null,
+    "message": "DNS name does not exist.",
+    "cause": "KMS client can't find KMS host SRV records in DNS (no KMS host, DNS publishing disabled, or DNS blocked).",
+    "resolution": "Install/publish a KMS host or set it with 'slmgr /skms', verify the KMS client setup key, or use a MAK instead.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; activation-error-0x8007232b-dns-name-does-not-exist.md"
+  },
+  {
+    "code": "0x80072338",
+    "name": "DNS_ERROR_RCODE_BADSIG",
+    "message": "DNS signature failed to verify (Event 12293, publishing KMS to DNS failed).",
+    "cause": "The KMS host lacks permission to edit the existing _VLMCS SRV record in DNS.",
+    "resolution": "Grant the KMS host computer Full Control on the _VLMCS record and restart the licensing service.",
+    "category": "kms",
+    "blocked": false,
+    "source": "event-12293-error-0x800723-set-kms-host.md"
+  },
+  {
+    "code": "0x8007251D",
+    "name": null,
+    "message": "No records found for DNS query.",
+    "cause": "KMS client can't find the KMS SRV records in DNS.",
+    "resolution": "Troubleshoot network connections and KMS DNS records.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0x8007267C",
+    "name": "DNS_ERROR_NO_DNS_SERVERS",
+    "message": "No DNS servers configured for local system.",
+    "cause": "The activating machine has no DNS server configured in its network properties.",
+    "resolution": "Configure a reachable DNS server, or switch to a MAK and use phone activation.",
+    "category": "network",
+    "blocked": false,
+    "source": "windows-activation-fails-with-error-0x8007267.md"
+  },
+  {
+    "code": "0x80072EE2",
+    "name": null,
+    "message": "Online activation attempt failed (mentioned when retrying activation after changing key).",
+    "cause": "Activation over the internet could not complete.",
+    "resolution": "Activate by phone: get the Installation ID (slmgr /dti), obtain a Confirmation ID, then run slmgr /atp.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0x80072EE7",
+    "name": null,
+    "message": "License/genuine ticket acquisition failed (Events 8200/8208).",
+    "cause": "System lacks Internet access to obtain the Windows Genuine Advantage ticket.",
+    "resolution": "Connect the system to the Internet and check firewall/proxy; the event alone doesn't mean a licensing problem.",
+    "category": "network",
+    "blocked": false,
+    "source": "event-id-8208-8200-900.md"
+  },
+  {
+    "code": "0x80092026",
+    "name": null,
+    "message": "The cryptographic operation failed due to a local security option setting.",
+    "cause": "The WinTrust Software Publishing 'State' registry value is set incorrectly, so the validation update (KB971033) fails to install.",
+    "resolution": "Set the State value to 0x23c00 or 0x23e00 and retry validation.",
+    "category": "other",
+    "blocked": false,
+    "source": "error-when-you-validate-copy-windows.md"
+  },
+  {
+    "code": "0x80092328",
+    "name": null,
+    "message": "DNS name does not exist.",
+    "cause": "KMS client can't find the KMS SRV resource records in DNS.",
+    "resolution": "Troubleshoot network connections and KMS DNS records.",
+    "category": "network",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC0020017",
+    "name": null,
+    "message": "KMS contact failure (Event 8198).",
+    "cause": "SPP service on the KMS client can't contact the KMS host; functionally similar to 0xC004F074.",
+    "resolution": "Set the KMS host explicitly, exempt KMS traffic from VPN/forced tunneling, restart sppsvc, verify port 1688 and DNS.",
+    "category": "kms",
+    "blocked": false,
+    "source": "activation-event-8198-error-0xc0020017-0x8007139f-kms-contact-failure.md"
+  },
+  {
+    "code": "0xC004B100",
+    "name": null,
+    "message": "The activation server determined that the computer could not be activated.",
+    "cause": "Microsoft doesn't support the MAK being used.",
+    "resolution": "Verify the MAK is the one Microsoft issued; contact the Licensing Activation Centers.",
+    "category": "key_invalid",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004C001",
+    "name": null,
+    "message": "The activation server determined the specified product key is invalid.",
+    "cause": "The MAK entered isn't valid.",
+    "resolution": "Re-enter the key, or verify it with the Microsoft Licensing Activation Centers.",
+    "category": "key_invalid",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004C003",
+    "name": null,
+    "message": "The activation server determined the specified product key is blocked.",
+    "cause": "The key is blocked on the activation server (reported stolen/misused, expired trial/evaluation key, edition mismatch, or not valid after migration to Azure).",
+    "resolution": "Obtain a new MAK from the Licensing Activation Centers (Azure VMs: use Azure KMS with a KMS client setup key).",
+    "category": "key_blocked",
+    "blocked": true,
+    "source": "troubleshoot-activation-error-codes.md; activation-error-0xc004c003-product-key-blocked.md; error-0xc004e002-during-activation.md"
+  },
+  {
+    "code": "0xC004C008",
+    "name": null,
+    "message": "The activation server determined that the specified product key could not be used.",
+    "cause": "KMS host key exceeded its activation limit (10 activations on at most 6 computers); the key is flagged.",
+    "resolution": "Contact Volume License Key support to reset the count or get a new key; Azure VMs can use Azure KMS.",
+    "category": "kms",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; activation-error-0xc004c008-product-key-not-used.md"
+  },
+  {
+    "code": "0xC004C020",
+    "name": null,
+    "message": "The activation server reported that the Multiple Activation Key has exceeded its limit.",
+    "cause": "The MAK has used up its limited number of activations.",
+    "resolution": "Request more activations from the Microsoft Licensing Activation Centers.",
+    "category": "mak_limit",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004C021",
+    "name": null,
+    "message": "The activation server reported that the Multiple Activation Key extension limit has been exceeded.",
+    "cause": "The MAK exceeded its activation (extension) limit.",
+    "resolution": "Request more activations from the Microsoft Licensing Activation Centers.",
+    "category": "mak_limit",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004C4A2",
+    "name": null,
+    "message": "Acquisition of genuine ticket failed (Event 8208 / WAT event 13).",
+    "cause": "A Jan 8-9, 2019 Activation/Validation server change caused volume-licensed Windows 7 KMS clients with KB971033 to be flagged non-genuine.",
+    "resolution": "Uninstall KB971033, rebuild activation files, reinstall the KMS client key and activate.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "activation-failures-not-genuine-notifications-volume-licensed-kms-client.md"
+  },
+  {
+    "code": "0xC004E002",
+    "name": null,
+    "message": "The Software Licensing Service reported that the license store contains inconsistent data.",
+    "cause": "Incorrect permissions on, or corruption of, the tokens.dat file.",
+    "resolution": "Fix tokens.dat permissions, or rename tokens.dat, run 'slmgr -rilc' and restart.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "error-0xc004e002-during-activation.md"
+  },
+  {
+    "code": "0xC004E015",
+    "name": "SL_E_EUL_CONSUMPTION_FAILED",
+    "message": "License consumption failed.",
+    "cause": "The tokens.dat license store file is corrupted.",
+    "resolution": "Rebuild tokens.dat and activate again (reinstall the KMS client key if 'Product not found').",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "error-0xc004e015-sl-e-eul-consumption-failed-activate-windows.md"
+  },
+  {
+    "code": "0xC004F009",
+    "name": null,
+    "message": "The Software Protection Service reported that the grace period expired.",
+    "cause": "The grace period expired before the system was activated (Notifications state).",
+    "resolution": "Contact the Microsoft Licensing Activation Centers.",
+    "category": "other",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F00F",
+    "name": null,
+    "message": "The Software Licensing Server reported that the hardware ID binding is beyond level of tolerance.",
+    "cause": "System hardware changed or drivers updated.",
+    "resolution": "MAK: reactivate online or by phone during the OOT grace period; KMS: restart or run 'slmgr /ato'.",
+    "category": "other",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F014",
+    "name": null,
+    "message": "The Software Protection Service reported that the product key is not available.",
+    "cause": "No product key is installed on the system.",
+    "resolution": "Install a MAK, or the KMS client setup key (see sources\\Pid.txt on the media).",
+    "category": "other",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F015",
+    "name": null,
+    "message": "Activation failed on KMS host (Event 12290, details 0xC004F042).",
+    "cause": "Windows 10 Enterprise client activating against a WS2012 R2/2008 R2 KMS host that has an older (non-Windows 10) CSVLK.",
+    "resolution": "Install the 'Windows Srv 2012R2 DataCtr/Std KMS for Windows 10' host key (plus required updates) on the KMS host.",
+    "category": "sku_mismatch",
+    "blocked": false,
+    "source": "error-0xc004f015-activate-windows-10.md"
+  },
+  {
+    "code": "0xC004F02C",
+    "name": null,
+    "message": "The Software Protection Service reported that the format for the offline activation data is incorrect.",
+    "cause": "Data entered during phone activation isn't valid.",
+    "resolution": "Re-enter the Confirmation ID (CID) correctly.",
+    "category": "other",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F035",
+    "name": null,
+    "message": "The computer could not be activated with a Volume license product key (Invalid Volume License Key).",
+    "cause": "The BIOS lacks a valid Windows marker (ACPI_SLIC) for a qualifying OS; Windows 7/Vista volume editions are licensed only as upgrades.",
+    "resolution": "Obtain a qualifying license and change to a valid MAK or Retail key (phone activation if needed).",
+    "category": "sku_mismatch",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; cannot-activate-windows-from-oem.md"
+  },
+  {
+    "code": "0xC004F038",
+    "name": null,
+    "message": "The count reported by your Key Management Service (KMS) is insufficient.",
+    "cause": "KMS host count is below threshold (>=5 for Windows Server clients, >=25 for Windows client).",
+    "resolution": "Add unique KMS clients to the pool (check with slmgr /dli) or use Azure KMS.",
+    "category": "kms",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; activation-error-0xc004cf038-insufficient-kms-host-pool-count.md"
+  },
+  {
+    "code": "0xC004F039",
+    "name": null,
+    "message": "The Key Management Service (KMS) is not enabled.",
+    "cause": "KMS doesn't respond to the KMS request.",
+    "resolution": "Troubleshoot the network between client and KMS host; ensure TCP 1688 isn't blocked.",
+    "category": "kms",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F041",
+    "name": null,
+    "message": "The Key Management Server (KMS) is not activated. KMS needs to be activated.",
+    "cause": "The KMS host itself hasn't been activated.",
+    "resolution": "Activate the KMS host online or by telephone.",
+    "category": "kms",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F042",
+    "name": "SL_E_VL_KEY_MANAGEMENT_SERVICE_ID_MISMATCH",
+    "message": "The specified Key Management Service (KMS) cannot be used.",
+    "cause": "Client contacted a KMS host that can't activate it (host key doesn't cover that product/version).",
+    "resolution": "Point clients to the correct KMS host, or install a host key that covers the client product.",
+    "category": "sku_mismatch",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; activation-error-0xc004cf042-cant-use-specified-kms.md; error-0xc004f015-activate-windows-10.md"
+  },
+  {
+    "code": "0xC004F050",
+    "name": null,
+    "message": "The Software Protection Service reported that the product key is invalid.",
+    "cause": "Typo in the key, or a Beta key used on a GA version.",
+    "resolution": "Verify the key matches the Windows version and characters (watch for em-dashes instead of hyphens).",
+    "category": "key_invalid",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F051",
+    "name": null,
+    "message": "The Software Protection Service reported that the product key is blocked.",
+    "cause": "Microsoft has blocked the product key.",
+    "resolution": "Get a new MAK or KMS key, install it, and activate again.",
+    "category": "key_blocked",
+    "blocked": true,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F059",
+    "name": null,
+    "message": "The Software Licensing Service reported that a license in the computer BIOS is invalid.",
+    "cause": "The ACPI_SLIC Windows marker in the BIOS is missing or corrupted on an OEM machine.",
+    "resolution": "Acquire a qualifying genuine license and switch to a MAK.",
+    "category": "sku_mismatch",
+    "blocked": false,
+    "source": "cannot-activate-windows-from-oem.md"
+  },
+  {
+    "code": "0xC004F063",
+    "name": null,
+    "message": "The Software Licensing Service reported that the computer BIOS is missing a required license.",
+    "cause": "Windows can't read the BIOS SLIC table needed for the OEM_SLP key (e.g., Service Tag not updated after motherboard replacement).",
+    "resolution": "Contact the OEM to update the BIOS with the correct serial number/Service Tag.",
+    "category": "sku_mismatch",
+    "blocked": false,
+    "source": "0xc004f063-when-activating-oem-version.md"
+  },
+  {
+    "code": "0xC004F064",
+    "name": null,
+    "message": "The Software Protection Service reported that the non-genuine grace period expired.",
+    "cause": "Windows Activation Technologies determined the system isn't authentic.",
+    "resolution": "Contact the Microsoft Licensing Activation Centers.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F065",
+    "name": null,
+    "message": "The application is running within the valid non-genuine period.",
+    "cause": "WAT determined the system isn't genuine but it is still within the non-genuine grace period.",
+    "resolution": "Install a genuine product key and activate before the grace period ends.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md"
+  },
+  {
+    "code": "0xC004F06C",
+    "name": null,
+    "message": "The KMS determined that the request timestamp is invalid.",
+    "cause": "Client clock differs too much from the KMS host (more than 4 hours), e.g., Windows Time service or NtpClient not working.",
+    "resolution": "Synchronize client time with the KMS host (NTP or AD DS).",
+    "category": "kms",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; error-0xc004f06c-activate-windows.md; error-0xc004f074-activate-windows.md"
+  },
+  {
+    "code": "0xC004F074",
+    "name": null,
+    "message": "No Key Management Service (KMS) could be contacted.",
+    "cause": "All KMS hosts contacted returned errors (network/port 1688 blocked, sppsvc stopped, stale DNS records, version mismatch, or time skew).",
+    "resolution": "Check Event ID 12288 entries and troubleshoot KMS connectivity, DNS, host updates and time sync.",
+    "category": "kms",
+    "blocked": false,
+    "source": "troubleshoot-activation-error-codes.md; error-0xc004f074-activate-windows.md"
+  },
+  {
+    "code": "0xC004F200",
+    "name": null,
+    "message": "Windows is running within the non-genuine notification period.",
+    "cause": "Volume-licensed Windows 7 KMS clients with KB971033 were flagged non-genuine by a Jan 2019 server change.",
+    "resolution": "Uninstall KB971033, rebuild activation files, reinstall the KMS client key and activate.",
+    "category": "licensing_service",
+    "blocked": false,
+    "source": "activation-failures-not-genuine-notifications-volume-licensed-kms-client.md"
+  }
+]
