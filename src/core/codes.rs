@@ -98,3 +98,27 @@ pub fn lookup(s: &str) -> Option<&'static ErrorCode> {
 }
 
 /// Every known code, service codes first.
+pub fn all() -> impl Iterator<Item = &'static ErrorCode> {
+    SERVICE_CODES.iter().chain(DOC_CODES.iter())
+}
+
+pub fn format_code(code: u32) -> String {
+    if code <= 0xFFFF { format!("0x{code:X}") } else { format!("0x{code:08X}") }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_codes() {
+        assert_eq!(parse_code("0x67"), Some(0x67));
+        assert_eq!(parse_code("C004C003"), Some(0xC004C003));
+        assert_eq!(parse_code("-1073430525"), Some(0xC004C003));
+        assert!(lookup("0x67").unwrap().blocked);
+        assert!(lookup("0xC004C003").unwrap().blocked);
+        assert!(lookup("0xC004F051").unwrap().blocked);
+        assert!(!lookup("0xC004C020").unwrap().blocked);
+        assert!(all().count() > 40);
+    }
+}
