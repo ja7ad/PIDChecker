@@ -98,5 +98,101 @@ pub struct RateLimitConfig {
     pub burst: u32,
     /// Use `X-Forwarded-For` / `Forwarded` for the client IP (behind a reverse proxy only).
     pub trust_proxy_headers: bool,
+}
 
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self { enabled: true, requests_per_minute: 120, burst: 30, trust_proxy_headers: false }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ApiConfig {
+    /// Require an API key (`Authorization: Bearer ...` or `X-API-Key`).
+    pub require_auth: bool,
+    pub keys_file: PathBuf,
+}
+
+impl Default for ApiConfig {
+    fn default() -> Self {
+        Self { require_auth: true, keys_file: "api_keys.json".into() }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Config {
+    pub server: ServerConfig,
+    pub rate_limit: RateLimitConfig,
+    pub checker: CheckerConfig,
+    pub api: ApiConfig,
+    #[serde(skip)]
+    pub path: PathBuf,
+}
+
+impl Config {
+    /// Locate the config file: explicit path, next to the executable, then CWD.
+    /// A default file is written next to the executable if none exists.
+    pub fn discover(explicit: Option<&Path>) -> Result<Self> {
+        if let Some(p) = explicit {
+            return Self::load_or_create(p);
+        }
+        let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+        let candidates = exe_dir.iter().cloned().chain(std::env::current_dir().ok());
+        for dir in candidates {
+            let p = dir.join(FILE_NAME);
+            if p.exists() {
+                return Self::load_or_create(&p);
+            }
+        }
+        let dir = exe_dir.or_else(|| std::env::current_dir().ok()).unwrap_or_default();
+        Self::load_or_create(&dir.join(FILE_NAME))
+    }
+
+    pub fn load_or_create(path: &Path) -> Result<Self> {
+        let mut cfg = if path.exists() {
+            let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?
+        } else {
+            let cfg = Config::default();
+            std::fs::write(path, cfg.to_toml()?).with_context(|| format!("writing {}", path.display()))?;
+            cfg
+        };
+        cfg.path = path.to_path_buf();
+        Ok(cfg)
+    }
+
+    pub fn save(&self) -> Result<()> {
+        std::fs::write(&self.path, self.to_toml()?).with_context(|| format!("writing {}", self.path.display()))
+    }
+
+    fn to_toml(&self) -> Result<String> {
+        Ok(format!("# PID Key Checker configuration\n\n{}", toml::to_string_pretty(self)?))
+    }
+
+    fn base_dir(&self) -> PathBuf {
+        self.path.parent().map(Path::to_path_buf).unwrap_or_default()
+    }
+
+    pub fn resolve(&self, p: &Path) -> PathBuf {
+        if p.is_absolute() { p.to_path_buf() } else { self.base_dir().join(p) }
+    }
+
+    /// Checker settings with all paths made absolute.
+    pub fn checker_resolved(&self) -> CheckerConfig {
+        let mut c = self.checker.clone();
+        c.data_dir = self.resolve(&c.data_dir);
+        c.blocklist_db = self.resolve(&c.blocklist_db);
+        c.pidgenx_path = self.resolve(&c.pidgenx_path);
+        c
+    }
+
+    pub fn keys_file(&self) -> PathBuf {
+        self.resolve(&self.api.keys_file)
+    }
+
+    pub fn bind_addr(&self) -> String {
+        format!("{}:{}", self.server.host, self.server.port)
+    }
 }
