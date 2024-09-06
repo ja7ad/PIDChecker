@@ -1,0 +1,37 @@
+# PID Key Checker configuration
+
+[server]
+host = "127.0.0.1"
+port = 8080
+autostart = false
+cors = false
+max_body_kb = 1024
+
+[rate_limit]
+enabled = true
+requests_per_minute = 120
+burst = 30
+trust_proxy_headers = false
+
+[checker]
+data_dir = "data"
+blocklist_db = "blocked.redb"
+max_batch_size = 500
+max_blocklist_batch = 10000
+online_check = true
+online_key_types = ["MAK"]
+online_timeout_secs = 15
+online_chunk_size = 25
+online_concurrency = 4
+record_blocked = true
+record_revoked = true
+cache_enabled = true
+cache_ttl_secs = 3600
+cache_max_entries = 100000
+pidgenx_enabled = true
+pidgenx_path = "pidgenx.dll"
+pidgenx_instances = 0
+
+[api]
+require_auth = true
+keys_file = "api_keys.json"
