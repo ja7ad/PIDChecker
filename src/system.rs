@@ -158,5 +158,69 @@ mod imp {
         let product = reg_string("ProductName").unwrap_or_else(|| "Windows".into());
         let build: u32 = reg_string("CurrentBuildNumber").and_then(|b| b.parse().ok()).unwrap_or(0);
         // Windows 11 still reports "Windows 10" in ProductName.
+        let name = if build >= 22000 { product.replacen("Windows 10", "Windows 11", 1) } else { product };
+        match reg_string("DisplayVersion") {
+            Some(v) => format!("Microsoft {name} {v}"),
+            None => format!("Microsoft {name}"),
+        }
+    }
 
+    fn reg_string(value: &str) -> Option<String> {
+        use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let key = wide("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion");
+        let name = wide(value);
+        let mut buf = [0u16; 256];
+        let mut len = (buf.len() * 2) as u32;
+        // SAFETY: buffer and length describe valid writable memory.
+        let rc = unsafe {
+            RegGetValueW(HKEY_LOCAL_MACHINE, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut len)
+        };
+        if rc != 0 {
+            return None;
+        }
+        let chars = (len as usize / 2).saturating_sub(1);
+        Some(String::from_utf16_lossy(&buf[..chars]))
+    }
+}
+
+#[cfg(windows)]
+pub use imp::{install_and_activate, installed_licenses, license_details, os_name};
+
+#[cfg(not(windows))]
+pub fn installed_licenses() -> Result<Vec<InstalledLicense>> {
+    bail!("installed license information is only available on Windows")
+}
+
+#[cfg(not(windows))]
+pub fn install_and_activate(_key: &str, _target: Target) -> Result<String> {
+    bail!("installing keys is only available on Windows")
+}
+
+#[cfg(not(windows))]
+pub fn license_details() -> Result<String> {
+    bail!("license details are only available on Windows")
+}
+
+#[cfg(not(windows))]
+pub fn os_name() -> String {
+    std::env::consts::OS.to_string()
+}
+
+/// Open a web link in the default browser.
+pub fn open_url(url: &str) {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return;
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        ShellExecuteW(std::ptr::null_mut(), wide("open").as_ptr(), wide(url).as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+    }
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
 }
