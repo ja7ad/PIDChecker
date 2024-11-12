@@ -43,5 +43,29 @@ pub fn acquire(dir: &Path, role: &str) -> Result<InstanceLock, LockError> {
         Err(TryLockError::Error(e)) => return Err(io(e)),
     }
     // Record the owner for the error message other instances show.
+    file.set_len(0).map_err(io)?;
+    file.rewind().map_err(io)?;
+    write!(file, "{role}, pid {}, started {}", std::process::id(), chrono::Local::now().format("%Y-%m-%d %H:%M:%S"))
+        .map_err(io)?;
+    file.flush().map_err(io)?;
+    Ok(InstanceLock { _file: file, path })
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn second_lock_fails_until_released() {
+        let dir = std::env::temp_dir().join(format!("pkc-lock-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let first = acquire(&dir, "gui").unwrap();
+        match acquire(&dir, "serve") {
+            Err(LockError::AlreadyRunning { owner, .. }) => assert!(owner.starts_with("gui, pid")),
+            other => panic!("expected AlreadyRunning, got {:?}", other.map(|_| ())),
+        }
+        drop(first);
+        assert!(acquire(&dir, "serve").is_ok());
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
