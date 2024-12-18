@@ -88,5 +88,85 @@ pub enum ApiKeyCmd {
     Delete { id: String },
     /// Set (or with 0, clear) a key's requests-per-minute limit
     RateLimit { id: String, requests_per_minute: u32 },
+}
+
+#[derive(Subcommand)]
+pub enum BlocklistCmd {
+    /// Number of blocked keys
+    Count,
+    /// Add keys (arguments, or any text on stdin)
+    Add {
+        keys: Vec<String>,
+        /// Note stored with the entries
+        #[arg(long, default_value = "manual")]
+        note: String,
+    },
+    /// Remove keys (arguments, or any text on stdin)
+    Remove { keys: Vec<String> },
+    /// Show whether keys are blocked and why
+    Check { keys: Vec<String> },
+}
+
+#[derive(Subcommand)]
+pub enum ConfigCmd {
+    /// Print the effective configuration
+    Show,
+    /// Print the path of config.toml
+    Path,
+}
+
+pub fn init_tracing(level: &str) {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        if level.contains('=') { level.into() } else { format!("pidkeychecker={level},actix_web={level}").into() }
+    });
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+}
+
+/// Keys from arguments, or from any text on stdin when none (or "-") are given.
+fn keys_or_stdin(keys: Vec<String>) -> Result<Vec<String>> {
+    if keys.is_empty() || keys == ["-"] {
+        let text = std::io::read_to_string(std::io::stdin())?;
+        return Ok(find_keys(&text).iter().map(|k| k.as_string()).collect());
+    }
+    Ok(keys)
+}
+
+fn config_dir(config: &Config) -> PathBuf {
+    config.path.parent().map(Path::to_path_buf).unwrap_or_default()
+}
+
+/// Take the single-instance lock or explain who holds it.
+pub fn lock(config: &Config, role: &str) -> Result<instance::InstanceLock> {
+    instance::acquire(&config_dir(config), role).map_err(|e| match e {
+        instance::LockError::AlreadyRunning { .. } => {
+            anyhow::anyhow!("{e}\nStop it first, or use the REST API / GUI of the running instance.")
+        }
+        other => other.into(),
+    })
+}
+
+/// Run a CLI command. `None` (no subcommand) is handled by the caller.
+pub fn run(cli: Cli, command: Command) -> Result<()> {
+    let mut config = Config::discover(cli.config.as_deref())?;
+    match command {
+        Command::Gui => {
+            #[cfg(feature = "gui")]
+            {
+                let _lock = lock(&config, "gui")?;
+                crate::gui::run(config)
+            }
+            #[cfg(not(feature = "gui"))]
+            bail!("built without the GUI")
+        }
+        Command::Serve { host, port } => {
+            if let Some(h) = host {
+                config.server.host = h;
+            }
+            if let Some(p) = port {
+                config.server.port = p;
+            }
+            let _lock = lock(&config, "serve")?;
+            serve(config)
+        }
 
 }
