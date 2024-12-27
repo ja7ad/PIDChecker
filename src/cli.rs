@@ -168,5 +168,65 @@ pub fn run(cli: Cli, command: Command) -> Result<()> {
             let _lock = lock(&config, "serve")?;
             serve(config)
         }
+        Command::Status => status(&config),
+        Command::Check { keys, offline, json } => {
+            let _lock = lock(&config, "check")?;
+            check(config, keys_or_stdin(keys)?, offline, json)
+        }
+        Command::Apikey(cmd) => apikey(&config, cmd),
+        Command::Blocklist(cmd) => {
+            let _lock = lock(&config, "blocklist")?;
+            blocklist(&config, cmd)
+        }
+        Command::Config(ConfigCmd::Path) => {
+            println!("{}", config.path.display());
+            Ok(())
+        }
+        Command::Config(ConfigCmd::Show) => {
+            println!("# {}\n{}", config.path.display(), toml::to_string_pretty(&config)?);
+            Ok(())
+        }
+        Command::Error { code } => {
+            explain(&code);
+            Ok(())
+        }
+        Command::PidgenxProbe { key, files } => probe(&config, &key, &files),
+    }
+}
+
+fn serve(config: Config) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let services = Services::load(config)?;
+        let stats = services.checker.stats();
+        tracing::info!(
+            "loaded {} products from {} pkeyconfigs in {} ms; {} blocked keys; config {}",
+            stats.configurations,
+            stats.files,
+            stats.load_ms,
+            services.checker.blocklist().len(),
+            services.config.path.display()
+        );
+        if services.config.api.require_auth && !services.keys.has_active_keys() {
+            tracing::warn!("authentication is required but no API keys exist; create one with `pkc apikey create --name admin --role admin`");
+        }
+        let rl = &services.config.rate_limit;
+        tracing::info!(
+            "rate limit: {}",
+            if rl.enabled { format!("{} req/min, burst {}", rl.requests_per_minute, rl.burst) } else { "disabled".into() }
+        );
+        let handle = server::spawn(&services.config, services.checker.clone(), services.keys.clone())?;
+        tokio::signal::ctrl_c().await?;
+        tracing::info!("shutting down");
+        handle.stop().await;
+        Ok(())
+    })
+}
+
+fn status(config: &Config) -> Result<()> {
+    let host = if config.server.host == "0.0.0.0" { "127.0.0.1" } else { config.server.host.as_str() };
+    let url = format!("http://{host}:{}/api/v1/health", config.server.port);
+    let rt = tokio::runtime::Runtime::new()?;
+    let body = rt.block_on(async {
 
 }
