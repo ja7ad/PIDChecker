@@ -228,5 +228,55 @@ fn status(config: &Config) -> Result<()> {
     let url = format!("http://{host}:{}/api/v1/health", config.server.port);
     let rt = tokio::runtime::Runtime::new()?;
     let body = rt.block_on(async {
+        let resp = reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build()?.get(&url).send().await?;
+        anyhow::Ok(resp.text().await?)
+    });
+    match body {
+        Ok(text) => {
+            let v: serde_json::Value = serde_json::from_str(&text).context("unexpected response")?;
+            println!("Server running at {url}");
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        Err(e) => {
+            println!("No server reachable at {url} ({e:#})");
+            if let Ok(owner) = std::fs::read_to_string(config_dir(config).join(instance::FILE_NAME))
+                && !owner.trim().is_empty()
+            {
+                println!("Last instance: {}", owner.trim());
+            }
+            std::process::exit(1);
+        }
+    }
+    Ok(())
+}
+
+fn check(config: Config, keys: Vec<String>, offline: bool, json: bool) -> Result<()> {
+    if keys.is_empty() {
+        bail!("no keys given");
+    }
+    let rt = tokio::runtime::Runtime::new()?;
+    let services = Services::load(config)?;
+    let online = !offline && services.checker.online_default();
+    let reports = rt.block_on(services.checker.check_many(keys, CheckOptions { online }));
+    if json {
+        println!("{}", serde_json::to_string_pretty(&reports)?);
+    } else {
+        for r in &reports {
+            println!("{}", render_text(r));
+        }
+    }
+    Ok(())
+}
+
+fn apikey(config: &Config, cmd: ApiKeyCmd) -> Result<()> {
+    let store = ApiKeyStore::open(&config.keys_file())?;
+    let found = |ok: bool, what: &str| println!("{}", if ok { what } else { "not found" });
+    match cmd {
+        ApiKeyCmd::Create { name, role, expires_days, rate_limit } => {
+            let (key, token) = store.create(&name, role, expires_days)?;
+            if rate_limit.is_some() {
+                store.set_rate_limit(&key.id, rate_limit)?;
+            }
+            println!("Created {} key '{}' (id {})", key.role, key.name, key.id);
 
 }
