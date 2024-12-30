@@ -278,5 +278,45 @@ fn apikey(config: &Config, cmd: ApiKeyCmd) -> Result<()> {
                 store.set_rate_limit(&key.id, rate_limit)?;
             }
             println!("Created {} key '{}' (id {})", key.role, key.name, key.id);
+            println!("Token (shown once): {token}");
+            println!("Use it as:  Authorization: Bearer {token}");
+        }
+        ApiKeyCmd::List => {
+            let keys = store.list();
+            if keys.is_empty() {
+                println!("No API keys. Create one with `pkc apikey create --name admin --role admin`.");
+            }
+            println!("{:<36}  {:<20} {:<5} {:<8} {:<12} {:>9} {:>8}  last used", "id", "name", "role", "state", "prefix", "requests", "rpm");
+            for k in keys {
+                println!(
+                    "{:<36}  {:<20} {:<5} {:<8} {:<12} {:>9} {:>8}  {}",
+                    k.id,
+                    k.name,
+                    k.role,
+                    if k.revoked { "revoked" } else if k.is_active() { "active" } else { "expired" },
+                    format!("{}…", k.prefix),
+                    k.requests,
+                    k.rate_limit_per_minute.map(|r| r.to_string()).unwrap_or_else(|| "default".into()),
+                    k.last_used_at.map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_else(|| "never".into()),
+                );
+            }
+        }
+        ApiKeyCmd::Revoke { id } => found(store.revoke(&id)?, "revoked"),
+        ApiKeyCmd::Delete { id } => found(store.delete(&id)?, "deleted"),
+        ApiKeyCmd::RateLimit { id, requests_per_minute } => {
+            found(store.set_rate_limit(&id, Some(requests_per_minute))?, "updated")
+        }
+    }
+    Ok(())
+}
+
+fn blocklist(config: &Config, cmd: BlocklistCmd) -> Result<()> {
+    let bl = Blocklist::open(&config.checker_resolved().blocklist_db)?;
+    let parse = |keys: Vec<String>| -> Result<_> {
+        let text = keys_or_stdin(keys)?.join("\n");
+        let keys = find_keys(&text);
+        if keys.is_empty() {
+            bail!("no valid product keys given");
+        }
 
 }
