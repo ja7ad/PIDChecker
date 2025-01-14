@@ -318,5 +318,35 @@ fn blocklist(config: &Config, cmd: BlocklistCmd) -> Result<()> {
         if keys.is_empty() {
             bail!("no valid product keys given");
         }
+        Ok(keys)
+    };
+    match cmd {
+        BlocklistCmd::Count => println!("{}", bl.len()),
+        BlocklistCmd::Add { keys, note } => {
+            let keys = parse(keys)?;
+            let rec = BlockRecord { source: note, error_code: None, added_at: chrono::Utc::now() };
+            let n = bl.insert_many(&keys, &rec)?;
+            println!("added {n}, already present {}, total {}", keys.len() - n, bl.len());
+        }
+        BlocklistCmd::Remove { keys } => {
+            let keys = parse(keys)?;
+            let n = bl.remove_many(&keys)?;
+            println!("removed {n}, not listed {}, total {}", keys.len() - n, bl.len());
+        }
+        BlocklistCmd::Check { keys } => {
+            for k in parse(keys)? {
+                match bl.get(&k) {
+                    Some(r) => println!(
+                        "{k}  BLOCKED  {}{}  {}",
+                        r.source,
+                        r.error_code.map(|c| format!(" ({c})")).unwrap_or_default(),
+                        r.added_at.format("%Y-%m-%d")
+                    ),
+                    None => println!("{k}  not blocked"),
+                }
+            }
+        }
+    }
+    Ok(())
 
 }
