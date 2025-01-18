@@ -348,5 +348,38 @@ fn blocklist(config: &Config, cmd: BlocklistCmd) -> Result<()> {
         }
     }
     Ok(())
+}
 
+fn explain(code: &str) {
+    match codes::lookup(code) {
+        Some(c) => {
+            println!("{} {}", codes::format_code(c.code), c.name.as_deref().unwrap_or(""));
+            println!("  Message   : {}", c.message);
+            println!("  Category  : {}{}", c.category, if c.blocked { " (key blocked)" } else { "" });
+            if let Some(x) = &c.cause {
+                println!("  Cause     : {x}");
+            }
+            if let Some(x) = &c.resolution {
+                println!("  Resolution: {x}");
+            }
+        }
+        None => println!("Unknown code {code}"),
+    }
+}
+
+#[cfg(windows)]
+fn probe(config: &Config, key: &str, files: &[PathBuf]) -> Result<()> {
+    let (pgx, path) = crate::core::pidgenx::load_any(&config.checker_resolved().pidgenx_path)?;
+    println!("dll: {}", path.display());
+    for f in files {
+        let t = std::time::Instant::now();
+        let (hr, res) = pgx.check(key, f);
+        println!("{:>10.3}s  0x{:08X}  {}  {:?}", t.elapsed().as_secs_f64(), hr as u32, f.display(), res.map(|r| r.act_config_id));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn probe(_: &Config, _: &str, _: &[PathBuf]) -> Result<()> {
+    bail!("pidgenx is only available on Windows")
 }
