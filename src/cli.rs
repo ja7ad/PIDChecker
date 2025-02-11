@@ -1,4 +1,5 @@
-//! Command line interface shared by `pkc` (console) and `pidkeychecker` (GUI).
+//! Command line interface
+//! Colorized terminal output. interface shared by `pkc` (console) and `pidkeychecker` (GUI).
 
 use std::path::{Path, PathBuf};
 
