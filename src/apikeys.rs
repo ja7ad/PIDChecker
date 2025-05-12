@@ -69,4 +69,54 @@ pub struct ApiKey {
     pub rate_limit_per_minute: Option<u32>,
 }
 
+impl ApiKey {
+    pub fn is_active(&self) -> bool {
+        !self.revoked && self.expires_at.is_none_or(|e| e > Utc::now())
+    }
+
+    /// Copy without the hash, for API responses.
+    pub fn public(&self) -> ApiKey {
+        ApiKey { hash: String::new(), ..self.clone() }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct StoreFile {
+    keys: Vec<ApiKey>,
+}
+
+pub struct ApiKeyStore {
+    path: PathBuf,
+    inner: RwLock<Inner>,
+}
+
+#[derive(Default)]
+struct Inner {
+    keys: Vec<ApiKey>,
+    by_hash: HashMap<String, usize>,
+    dirty: bool,
+}
+
+impl Inner {
+    fn reindex(&mut self) {
+        self.by_hash = self.keys.iter().enumerate().map(|(i, k)| (k.hash.clone(), i)).collect();
+    }
+}
+
+fn hash_token(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+fn generate_token() -> String {
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let mut out = String::from(PREFIX);
+    // Rejection sampling keeps the distribution uniform.
+    while out.len() < PREFIX.len() + 43 {
+        let mut buf = [0u8; 64];
+        rand::fill(&mut buf);
+        for b in buf {
+            if (b as usize) < ALPHABET.len() * 4 && out.len() < PREFIX.len() + 43 {
+                out.push(ALPHABET[b as usize % ALPHABET.len()] as char);
+            }
+
 }
