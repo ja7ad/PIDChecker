@@ -118,5 +118,45 @@ fn generate_token() -> String {
             if (b as usize) < ALPHABET.len() * 4 && out.len() < PREFIX.len() + 43 {
                 out.push(ALPHABET[b as usize % ALPHABET.len()] as char);
             }
+        }
+    }
+    out
+}
+
+impl ApiKeyStore {
+    pub fn open(path: &Path) -> Result<Self> {
+        let mut inner = Inner::default();
+        if path.exists() {
+            let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            let file: StoreFile = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+            inner.keys = file.keys;
+            inner.reindex();
+        }
+        Ok(Self { path: path.to_path_buf(), inner: RwLock::new(inner) })
+    }
+
+    fn persist(&self, inner: &mut Inner) -> Result<()> {
+        let file = StoreFile { keys: inner.keys.clone() };
+        let tmp = self.path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&file)?)?;
+        std::fs::rename(&tmp, &self.path)?;
+        inner.dirty = false;
+        Ok(())
+    }
+
+    /// Create a key. Returns the record and the plaintext token (shown once).
+    pub fn create(&self, name: &str, role: Role, expires_in_days: Option<u32>) -> Result<(ApiKey, String)> {
+        let name = name.trim();
+        if name.is_empty() {
+            bail!("name must not be empty");
+        }
+        let token = generate_token();
+        let now = Utc::now();
+        let key = ApiKey {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            role,
+            prefix: token[..PREFIX.len() + 6].to_string(),
+            hash: hash_token(&token),
 
 }
