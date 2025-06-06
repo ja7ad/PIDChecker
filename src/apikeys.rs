@@ -158,5 +158,55 @@ impl ApiKeyStore {
             role,
             prefix: token[..PREFIX.len() + 6].to_string(),
             hash: hash_token(&token),
+            created_at: now,
+            expires_at: expires_in_days.filter(|d| *d > 0).map(|d| now + chrono::Duration::days(d as i64)),
+            last_used_at: None,
+            requests: 0,
+            revoked: false,
+            rate_limit_per_minute: None,
+        };
+        let mut inner = self.inner.write();
+        inner.keys.push(key.clone());
+        inner.reindex();
+        self.persist(&mut inner)?;
+        Ok((key.public(), token))
+    }
+
+    /// Validate a presented token and record its use.
+    pub fn authenticate(&self, token: &str) -> Option<ApiKey> {
+        if !token.starts_with(PREFIX) {
+            return None;
+        }
+        let hash = hash_token(token);
+        let mut inner = self.inner.write();
+        let idx = *inner.by_hash.get(&hash)?;
+        let key = &mut inner.keys[idx];
+        if !key.is_active() {
+            return None;
+        }
+        key.last_used_at = Some(Utc::now());
+        key.requests += 1;
+        let out = key.public();
+        inner.dirty = true;
+        Some(out)
+    }
+
+    /// Look up an active key without recording usage.
+    pub fn find(&self, token: &str) -> Option<ApiKey> {
+        let inner = self.inner.read();
+        let idx = *inner.by_hash.get(&hash_token(token))?;
+        Some(&inner.keys[idx]).filter(|k| k.is_active()).map(ApiKey::public)
+    }
+
+    pub fn set_rate_limit(&self, id: &str, per_minute: Option<u32>) -> Result<bool> {
+        let mut inner = self.inner.write();
+        let Some(k) = inner.keys.iter_mut().find(|k| k.id == id) else { return Ok(false) };
+        k.rate_limit_per_minute = per_minute.filter(|v| *v > 0);
+        self.persist(&mut inner)?;
+        Ok(true)
+    }
+
+    pub fn list(&self) -> Vec<ApiKey> {
+        self.inner.read().keys.iter().map(ApiKey::public).collect()
 
 }
