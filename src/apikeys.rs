@@ -208,5 +208,60 @@ impl ApiKeyStore {
 
     pub fn list(&self) -> Vec<ApiKey> {
         self.inner.read().keys.iter().map(ApiKey::public).collect()
+    }
 
+    pub fn has_active_keys(&self) -> bool {
+        self.inner.read().keys.iter().any(ApiKey::is_active)
+    }
+
+    pub fn revoke(&self, id: &str) -> Result<bool> {
+        let mut inner = self.inner.write();
+        let Some(k) = inner.keys.iter_mut().find(|k| k.id == id) else { return Ok(false) };
+        k.revoked = true;
+        self.persist(&mut inner)?;
+        Ok(true)
+    }
+
+    pub fn delete(&self, id: &str) -> Result<bool> {
+        let mut inner = self.inner.write();
+        let before = inner.keys.len();
+        inner.keys.retain(|k| k.id != id);
+        if inner.keys.len() == before {
+            return Ok(false);
+        }
+        inner.reindex();
+        self.persist(&mut inner)?;
+        Ok(true)
+    }
+
+    /// Persist usage statistics if they changed (called periodically).
+    pub fn flush(&self) -> Result<()> {
+        let mut inner = self.inner.write();
+        if inner.dirty {
+            self.persist(&mut inner)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_authenticate_revoke() {
+        let dir = std::env::temp_dir().join(format!("pkc-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = ApiKeyStore::open(&dir.join("keys.json")).unwrap();
+        let (rec, token) = store.create("ci", Role::Admin, None).unwrap();
+        assert!(token.starts_with(PREFIX) && token.len() == PREFIX.len() + 43);
+        assert_eq!(store.authenticate(&token).unwrap().id, rec.id);
+        assert!(store.authenticate("pkc_wrong").is_none());
+        store.revoke(&rec.id).unwrap();
+        assert!(store.authenticate(&token).is_none());
+        // Reload from disk.
+        let reopened = ApiKeyStore::open(&dir.join("keys.json")).unwrap();
+        assert_eq!(reopened.list().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
