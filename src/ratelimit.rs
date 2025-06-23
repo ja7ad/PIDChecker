@@ -48,5 +48,45 @@ impl Default for RateLimiter {
     }
 }
 
+impl RateLimiter {
+    pub fn check(&self, client: &str, quota: Quota) -> Decision {
+        self.check_at(client, quota, Instant::now())
+    }
+
+    fn check_at(&self, client: &str, quota: Quota, now: Instant) -> Decision {
+        self.sweep(now);
+        let t = quota.interval();
+        let tau = quota.tolerance();
+        let mut state = self.state.lock();
+        let tat = state.get(client).copied().unwrap_or(now).max(now);
+        let ahead = tat - now;
+        if ahead > tau {
+            let retry = ahead - tau;
+            return Decision {
+                allowed: false,
+                limit: quota.burst,
+                remaining: 0,
+                reset_secs: ahead.as_secs_f64().ceil() as u64,
+                retry_after_secs: retry.as_secs_f64().ceil().max(1.0) as u64,
+            };
+        }
+        let new_tat = tat + t;
+        state.insert(client.to_string(), new_tat);
+        let used = (new_tat - now).as_secs_f64() / t.as_secs_f64();
+        Decision {
+            allowed: true,
+            limit: quota.burst,
+            remaining: (quota.burst as f64 - used).floor().max(0.0) as u32,
+            reset_secs: (new_tat - now).as_secs_f64().ceil() as u64,
+            retry_after_secs: 0,
+        }
+    }
+
+    /// Drop idle clients once a minute so the map cannot grow unbounded.
+    fn sweep(&self, now: Instant) {
+        let mut last = self.last_sweep.lock();
+        if now.duration_since(*last) < Duration::from_secs(60) {
+            return;
+        }
 
 }
