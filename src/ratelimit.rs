@@ -88,5 +88,32 @@ impl RateLimiter {
         if now.duration_since(*last) < Duration::from_secs(60) {
             return;
         }
+        *last = now;
+        self.state.lock().retain(|_, tat| *tat > now);
+    }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn burst_then_refill() {
+        let rl = RateLimiter::default();
+        let q = Quota { per_minute: 60, burst: 3 };
+        let t0 = Instant::now();
+        for i in 0..3 {
+            let d = rl.check_at("a", q, t0);
+            assert!(d.allowed, "request {i}");
+            assert_eq!(d.remaining, 2 - i);
+        }
+        let d = rl.check_at("a", q, t0);
+        assert!(!d.allowed);
+        assert_eq!(d.retry_after_secs, 1);
+        // Another client is unaffected.
+        assert!(rl.check_at("b", q, t0).allowed);
+        // One interval later one token is back.
+        assert!(rl.check_at("a", q, t0 + Duration::from_secs(1)).allowed);
+        assert!(!rl.check_at("a", q, t0 + Duration::from_secs(1)).allowed);
+    }
 }
