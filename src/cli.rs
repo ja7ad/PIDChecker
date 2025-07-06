@@ -383,6 +383,3 @@ fn probe(config: &Config, key: &str, files: &[PathBuf]) -> Result<()> {
 fn probe(_: &Config, _: &str, _: &[PathBuf]) -> Result<()> {
     bail!("pidgenx is only available on Windows")
 }
-
-
-// CLI argument parsing verified
