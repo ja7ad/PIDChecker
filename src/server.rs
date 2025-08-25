@@ -88,5 +88,65 @@ fn token(req: &HttpRequest) -> Option<&str> {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
         .map(str::trim)
+}
+
+fn authenticate(req: &HttpRequest) -> Result<Option<ApiKey>, ApiError> {
+    let st = req.app_data::<web::Data<AppState>>().ok_or_else(|| internal("state missing"))?;
+    match token(req) {
+        Some(t) => st
+            .keys
+            .authenticate(t)
+            .map(Some)
+            .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "invalid, revoked or expired API key")),
+        None if st.require_auth => Err(err(StatusCode::UNAUTHORIZED, "missing API key")),
+        None => Ok(None),
+    }
+}
+
+/// Any authenticated caller (or anyone when auth is disabled).
+pub struct User(#[allow(dead_code)] Option<ApiKey>);
+
+impl FromRequest for User {
+    type Error = ApiError;
+    type Future = Ready<Result<Self, ApiError>>;
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        ready(authenticate(req).map(User))
+    }
+}
+
+/// Caller holding an admin key (or anyone when auth is disabled).
+pub struct Admin(#[allow(dead_code)] Option<ApiKey>);
+
+impl FromRequest for Admin {
+    type Error = ApiError;
+    type Future = Ready<Result<Self, ApiError>>;
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        ready(authenticate(req).and_then(|k| match k {
+            Some(k) if k.role == Role::Admin => Ok(Admin(Some(k))),
+            None => Ok(Admin(None)),
+            Some(_) => Err(err(StatusCode::FORBIDDEN, "admin API key required")),
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+
+async fn rate_limit(
+    req: actix_web::dev::ServiceRequest,
+    next: actix_web::middleware::Next<impl actix_web::body::MessageBody + 'static>,
+) -> Result<actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>, actix_web::Error> {
+    use actix_web::http::header::{HeaderName, HeaderValue};
+
+    let Some(st) = req.app_data::<Data>().cloned() else {
+        return next.call(req).await.map(|r| r.map_into_left_body());
+    };
+    let cfg = &st.rate_limit;
+    if !cfg.enabled || req.path().ends_with("/health") {
+        return next.call(req).await.map(|r| r.map_into_left_body());
+    }
+    // Identify the client: API key (with optional per-key quota) or IP address.
+    let api_key = token(req.request()).and_then(|t| st.keys.find(t));
+    let (client, per_minute) = match &api_key {
 
 }
