@@ -148,5 +148,55 @@ async fn rate_limit(
     // Identify the client: API key (with optional per-key quota) or IP address.
     let api_key = token(req.request()).and_then(|t| st.keys.find(t));
     let (client, per_minute) = match &api_key {
+        Some(k) => (format!("key:{}", k.id), k.rate_limit_per_minute.unwrap_or(cfg.requests_per_minute)),
+        None => {
+            let info = req.connection_info();
+            let ip = if cfg.trust_proxy_headers { info.realip_remote_addr() } else { info.peer_addr() };
+            (format!("ip:{}", ip.unwrap_or("unknown")), cfg.requests_per_minute)
+        }
+    };
+    let quota = crate::ratelimit::Quota { per_minute, burst: cfg.burst.max(1) };
+    let d = st.limiter.check(&client, quota);
+    let headers = [
+        ("ratelimit-limit", d.limit.to_string()),
+        ("ratelimit-remaining", d.remaining.to_string()),
+        ("ratelimit-reset", d.reset_secs.to_string()),
+        ("ratelimit-policy", format!("{};w=60;burst={}", per_minute, quota.burst)),
+    ];
+    let mut res = if d.allowed {
+        next.call(req).await?.map_into_left_body()
+    } else {
+        let body = HttpResponse::TooManyRequests()
+            .insert_header(("retry-after", d.retry_after_secs.to_string()))
+            .json(json!({ "error": "rate limit exceeded", "retry_after_secs": d.retry_after_secs }));
+        req.into_response(body).map_into_right_body()
+    };
+    for (name, value) in headers {
+        if let Ok(v) = HeaderValue::from_str(&value) {
+            res.headers_mut().insert(HeaderName::from_static(name), v);
+        }
+    }
+    Ok(res)
+}
+
+// ---------------------------------------------------------------------------
+// Request bodies
+
+#[derive(Deserialize)]
+struct OnlineQuery {
+    online: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct CheckBody {
+    key: String,
+    online: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct BatchBody {
+    keys: Vec<String>,
+    online: Option<bool>,
+}
 
 }
