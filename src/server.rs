@@ -199,4 +199,34 @@ struct BatchBody {
     online: Option<bool>,
 }
 
+#[derive(Deserialize)]
+struct BlocklistBody {
+    keys: Vec<String>,
+    /// Free text stored as the record source, e.g. "ticket #42".
+    note: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CreateKeyBody {
+    name: String,
+    #[serde(default)]
+    role: Role,
+    expires_in_days: Option<u32>,
+}
+
+type Data = web::Data<AppState>;
+
+fn opts(st: &AppState, online: Option<bool>) -> CheckOptions {
+    CheckOptions { online: online.unwrap_or(st.checker.online_default()) }
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+
+#[get("/health")]
+async fn health(st: Data) -> HttpResponse {
+    HttpResponse::Ok().json(json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+
 }
