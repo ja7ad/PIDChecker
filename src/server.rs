@@ -228,5 +228,45 @@ async fn health(st: Data) -> HttpResponse {
     HttpResponse::Ok().json(json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
+        "database": st.checker.stats(),
+        "blocklist": st.checker.blocklist().len(),
+        "legacy_keys_supported": st.checker.legacy_supported(),
+        "max_batch_size": st.max_batch,
+        "auth_required": st.require_auth,
+    }))
+}
+
+#[get("/check/{key}")]
+async fn check_get(st: Data, _u: User, key: web::Path<String>, q: web::Query<OnlineQuery>) -> HttpResponse {
+    HttpResponse::Ok().json(st.checker.check_one(key.into_inner(), opts(&st, q.online)).await)
+}
+
+#[post("/check")]
+async fn check_post(st: Data, _u: User, body: web::Json<CheckBody>) -> HttpResponse {
+    let body = body.into_inner();
+    HttpResponse::Ok().json(st.checker.check_one(body.key, opts(&st, body.online)).await)
+}
+
+#[post("/check/batch")]
+async fn check_batch(st: Data, _u: User, body: web::Json<BatchBody>) -> Result<HttpResponse, ApiError> {
+    let body = body.into_inner();
+    if body.keys.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "keys must not be empty"));
+    }
+    if body.keys.len() > st.max_batch {
+        return Err(err(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("batch of {} keys exceeds the limit of {}", body.keys.len(), st.max_batch),
+        ));
+    }
+    let started = Instant::now();
+    let results = st.checker.check_many(body.keys, opts(&st, body.online)).await;
+    Ok(HttpResponse::Ok().json(json!({
+        "count": results.len(),
+        "valid": results.iter().filter(|r| r.valid).count(),
+        "blocked": results.iter().filter(|r| r.blocked).count(),
+        "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "results": results,
+    })))
 
 }
