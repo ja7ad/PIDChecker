@@ -268,5 +268,55 @@ async fn check_batch(st: Data, _u: User, body: web::Json<BatchBody>) -> Result<H
         "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
         "results": results,
     })))
+}
+
+#[get("/errors")]
+async fn error_codes(_u: User) -> HttpResponse {
+    HttpResponse::Ok().json(codes::all().collect::<Vec<_>>())
+}
+
+#[get("/errors/{code}")]
+async fn error_code(_u: User, code: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    codes::lookup(&code)
+        .map(|c| HttpResponse::Ok().json(c))
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, format!("unknown error code {code}")))
+}
+
+#[get("/blocklist")]
+async fn blocklist_stats(st: Data, _u: User) -> HttpResponse {
+    HttpResponse::Ok().json(json!({ "count": st.checker.blocklist().len() }))
+}
+
+#[get("/blocklist/{key}")]
+async fn blocklist_get(st: Data, _u: User, key: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    let key = ProductKey::parse(&key).map_err(|e| err(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let record = st.checker.blocklist().get(&key);
+    Ok(HttpResponse::Ok().json(json!({ "key": key.as_string(), "blocked": record.is_some(), "record": record })))
+}
+
+/// Parse keys, separating the invalid ones so callers get precise feedback.
+fn parse_keys(st: &AppState, keys: &[String]) -> Result<(Vec<ProductKey>, Vec<String>), ApiError> {
+    if keys.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "keys must not be empty"));
+    }
+    if keys.len() > st.max_blocklist_batch {
+        return Err(err(StatusCode::PAYLOAD_TOO_LARGE, format!("at most {} keys per request", st.max_blocklist_batch)));
+    }
+    let mut ok = Vec::with_capacity(keys.len());
+    let mut invalid = Vec::new();
+    for k in keys {
+        match ProductKey::parse(k) {
+            Ok(p) => ok.push(p),
+            Err(_) => invalid.push(k.clone()),
+        }
+    }
+    Ok((ok, invalid))
+}
+
+#[post("/blocklist")]
+async fn blocklist_add(st: Data, _a: Admin, body: web::Json<BlocklistBody>) -> Result<HttpResponse, ApiError> {
+    let (keys, invalid) = parse_keys(&st, &body.keys)?;
+    let record = BlockRecord {
+        source: body.note.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "manual".into()),
 
 }
