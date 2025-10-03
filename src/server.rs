@@ -318,5 +318,55 @@ async fn blocklist_add(st: Data, _a: Admin, body: web::Json<BlocklistBody>) -> R
     let (keys, invalid) = parse_keys(&st, &body.keys)?;
     let record = BlockRecord {
         source: body.note.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "manual".into()),
+        error_code: None,
+        added_at: Utc::now(),
+    };
+    let added = st.checker.blocklist().insert_many(&keys, &record).map_err(internal)?;
+    Ok(HttpResponse::Ok().json(json!({
+        "added": added, "already_present": keys.len() - added, "invalid": invalid,
+        "total": st.checker.blocklist().len(),
+    })))
+}
+
+#[post("/blocklist/remove")]
+async fn blocklist_remove(st: Data, _a: Admin, body: web::Json<BlocklistBody>) -> Result<HttpResponse, ApiError> {
+    let (keys, invalid) = parse_keys(&st, &body.keys)?;
+    let removed = st.checker.blocklist().remove_many(&keys).map_err(internal)?;
+    Ok(HttpResponse::Ok().json(json!({
+        "removed": removed, "not_found": keys.len() - removed, "invalid": invalid,
+        "total": st.checker.blocklist().len(),
+    })))
+}
+
+#[delete("/blocklist/{key}")]
+async fn blocklist_delete(st: Data, _a: Admin, key: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    let key = ProductKey::parse(&key).map_err(|e| err(StatusCode::BAD_REQUEST, e.to_string()))?;
+    match st.checker.blocklist().remove(&key).map_err(internal)? {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(err(StatusCode::NOT_FOUND, "key is not in the blocklist")),
+    }
+}
+
+#[get("/apikeys")]
+async fn keys_list(st: Data, _a: Admin) -> HttpResponse {
+    HttpResponse::Ok().json(st.keys.list())
+}
+
+#[post("/apikeys")]
+async fn keys_create(st: Data, _a: Admin, body: web::Json<CreateKeyBody>) -> Result<HttpResponse, ApiError> {
+    let (key, token) = st
+        .keys
+        .create(&body.name, body.role, body.expires_in_days)
+        .map_err(|e| err(StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(HttpResponse::Created().json(json!({ "token": token, "key": key })))
+}
+
+#[post("/apikeys/{id}/revoke")]
+async fn keys_revoke(st: Data, _a: Admin, id: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    match st.keys.revoke(&id).map_err(internal)? {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(err(StatusCode::NOT_FOUND, "no such key")),
+    }
+}
 
 }
