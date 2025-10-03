@@ -369,4 +369,44 @@ async fn keys_revoke(st: Data, _a: Admin, id: web::Path<String>) -> Result<HttpR
     }
 }
 
+#[derive(Deserialize)]
+struct RateLimitBody {
+    /// Requests per minute; `null` or 0 restores the server default.
+    requests_per_minute: Option<u32>,
+}
+
+#[actix_web::put("/apikeys/{id}/ratelimit")]
+async fn keys_ratelimit(st: Data, _a: Admin, id: web::Path<String>, body: web::Json<RateLimitBody>) -> Result<HttpResponse, ApiError> {
+    match st.keys.set_rate_limit(&id, body.requests_per_minute).map_err(internal)? {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(err(StatusCode::NOT_FOUND, "no such key")),
+    }
+}
+
+#[delete("/apikeys/{id}")]
+async fn keys_delete(st: Data, _a: Admin, id: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    match st.keys.delete(&id).map_err(internal)? {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(err(StatusCode::NOT_FOUND, "no such key")),
+    }
+}
+
+pub fn configure(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("/api/v1")
+            .service(health)
+            // `/check/batch` must precede `/check/{key}`.
+            .service(check_batch)
+            .service(check_post)
+            .service(check_get)
+            .service(error_codes)
+            .service(error_code)
+            .service(blocklist_stats)
+            .service(blocklist_remove)
+            .service(blocklist_get)
+            .service(blocklist_add)
+            .service(blocklist_delete)
+            .service(keys_list)
+            .service(keys_create)
+
 }
