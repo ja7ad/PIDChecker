@@ -408,5 +408,45 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(blocklist_delete)
             .service(keys_list)
             .service(keys_create)
+            .service(keys_revoke)
+            .service(keys_ratelimit)
+            .service(keys_delete),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+
+/// A running server. It runs on its own thread with an actix system, so it
+/// can be started and stopped from the GUI or the CLI alike.
+pub struct ServerHandle {
+    pub addr: SocketAddr,
+    handle: ActixHandle,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ServerHandle {
+    /// Gracefully stop the server and wait for its thread.
+    pub async fn stop(mut self) {
+        self.handle.stop(true).await;
+        if let Some(t) = self.thread.take() {
+            let _ = tokio::task::spawn_blocking(move || t.join()).await;
+        }
+    }
+}
+
+pub fn spawn(cfg: &Config, checker: Arc<Checker>, keys: Arc<ApiKeyStore>) -> Result<ServerHandle> {
+    let state = AppState {
+        checker,
+        keys: keys.clone(),
+        require_auth: cfg.api.require_auth,
+        max_batch: cfg.checker.max_batch_size,
+        max_blocklist_batch: cfg.checker.max_blocklist_batch,
+        rate_limit: cfg.rate_limit.clone(),
+        limiter: Arc::new(crate::ratelimit::RateLimiter::default()),
+    };
+    let cors = cfg.server.cors;
+    let body_limit = cfg.server.max_body_kb * 1024;
+    let listener = std::net::TcpListener::bind(cfg.bind_addr()).with_context(|| format!("binding {}", cfg.bind_addr()))?;
 
 }
