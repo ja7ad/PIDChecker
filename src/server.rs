@@ -448,5 +448,35 @@ pub fn spawn(cfg: &Config, checker: Arc<Checker>, keys: Arc<ApiKeyStore>) -> Res
     let cors = cfg.server.cors;
     let body_limit = cfg.server.max_body_kb * 1024;
     let listener = std::net::TcpListener::bind(cfg.bind_addr()).with_context(|| format!("binding {}", cfg.bind_addr()))?;
+    let addr = listener.local_addr()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let thread = std::thread::Builder::new().name("rest-api".into()).spawn(move || {
+        let sys = actix_web::rt::System::new();
+        sys.block_on(async move {
+            let data = web::Data::new(state);
+            let server = HttpServer::new(move || {
+                let cors_layer = if cors {
+                    actix_cors::Cors::permissive()
+                } else {
+                    actix_cors::Cors::default()
+                };
+                App::new()
+                    .app_data(data.clone())
+                    .app_data(web::JsonConfig::default().limit(body_limit).error_handler(|e, _| {
+                        let msg = e.to_string();
+                        actix_web::error::InternalError::from_response(
+                            e,
+                            HttpResponse::BadRequest().json(json!({ "error": msg })),
+                        )
+                        .into()
+                    }))
+                    .wrap(actix_web::middleware::from_fn(rate_limit))
+                    .wrap(cors_layer)
+                    .wrap(actix_web::middleware::Logger::new("%a \"%r\" %s %Dms"))
+                    .configure(configure)
+            })
+            .disable_signals()
+            .shutdown_timeout(5)
 
 }
