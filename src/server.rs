@@ -478,5 +478,33 @@ pub fn spawn(cfg: &Config, checker: Arc<Checker>, keys: Arc<ApiKeyStore>) -> Res
             })
             .disable_signals()
             .shutdown_timeout(5)
+            .listen(listener);
+            let server = match server {
+                Ok(s) => s.run(),
+                Err(e) => {
+                    let _ = tx.send(Err(anyhow::anyhow!(e)));
+                    return;
+                }
+            };
+            let _ = tx.send(Ok(server.handle()));
+            // Persist API key usage counters periodically.
+            let flusher = actix_web::rt::spawn(async move {
+                let mut tick = actix_web::rt::time::interval(Duration::from_secs(30));
+                loop {
+                    tick.tick().await;
+                    if let Err(e) = keys.flush() {
+                        tracing::warn!("saving API key usage: {e:#}");
+                    }
+                }
+            });
+            if let Err(e) = server.await {
+                tracing::error!("server error: {e}");
+            }
+            flusher.abort();
+        });
+    })?;
 
+    let handle = rx.recv().context("server thread exited")??;
+    tracing::info!("REST API listening on http://{addr}/api/v1");
+    Ok(ServerHandle { addr, handle, thread: Some(thread) })
 }
