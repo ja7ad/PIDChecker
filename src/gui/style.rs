@@ -118,5 +118,105 @@ pub fn indicator(active: bool) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
+pub fn badge(c: Color) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(Color { a: 0.16, ..c })),
+        border: stroke(Color { a: 0.55, ..c }, 999.0),
+        text_color: Some(c),
+        ..Default::default()
+    }
+}
+
+pub fn nav(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let bg = match (active, status) {
+            (_, button::Status::Pressed) => Some(SURFACE_PRESSED),
+            (true, _) => Some(SUBTLE_HOVER),
+            (false, button::Status::Hovered) => Some(color!(0x2e2e2e)),
+            _ => None,
+        };
+        button::Style {
+            background: bg.map(Background::Color),
+            text_color: if active { TEXT } else { TEXT_2 },
+            border: Border { radius: RADIUS_CONTROL.into(), ..Default::default() },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+/// Fluent "primary" (accent) button.
+pub fn primary(_: &Theme, status: button::Status) -> button::Style {
+    let bg = match status {
+        button::Status::Hovered => BRAND_HOVER,
+        button::Status::Pressed => BRAND_PRESSED,
+        button::Status::Disabled => color!(0x333333),
+        button::Status::Active => BRAND_BG,
+    };
+    button::Style {
+        background: Some(Background::Color(bg)),
+        text_color: if status == button::Status::Disabled { color!(0x5c5c5c) } else { TEXT },
+        border: Border { radius: RADIUS_CONTROL.into(), ..Default::default() },
+        shadow: Shadow::default(),
+        snap: true,
+    }
+}
+
+/// Fluent "secondary" (outline) button.
+pub fn secondary(_: &Theme, status: button::Status) -> button::Style {
+    let (bg, border) = match status {
+        button::Status::Hovered => (SURFACE_HOVER, color!(0x757575)),
+        button::Status::Pressed => (SURFACE_PRESSED, color!(0x6b6b6b)),
+        button::Status::Disabled => (color!(0x252525), color!(0x424242)),
+        button::Status::Active => (SURFACE, STROKE),
+    };
+    button::Style {
+        background: Some(Background::Color(bg)),
+        text_color: if status == button::Status::Disabled { color!(0x5c5c5c) } else { TEXT },
+        border: stroke(border, RADIUS_CONTROL),
+        shadow: Shadow::default(),
+        snap: true,
+    }
+}
+
+/// Destructive action: secondary shape with a red label.
+pub fn danger(t: &Theme, status: button::Status) -> button::Style {
+    let mut s = secondary(t, status);
+    if status != button::Status::Disabled {
+        s.text_color = DANGER;
+    }
+    s
+}
+
+/// Fluent text field: dark fill, subtle stroke, brand stroke when focused.
+pub fn input(_: &Theme, status: text_input::Status) -> text_input::Style {
+    let border = match status {
+        text_input::Status::Focused { .. } => Border { color: ACCENT, width: 1.0, radius: RADIUS_CONTROL.into() },
+        text_input::Status::Hovered => stroke(color!(0x757575), RADIUS_CONTROL),
+        _ => stroke(STROKE_SUBTLE, RADIUS_CONTROL),
+    };
+    text_input::Style {
+        background: Background::Color(color!(0x292929)),
+        border,
+        icon: MUTED,
+        placeholder: color!(0x8a8a8a),
+        value: TEXT,
+        selection: Color { a: 0.45, ..ACCENT },
+    }
+}
+
+pub fn switch(_: &Theme, status: toggler::Status) -> toggler::Style {
+    let on = matches!(status, toggler::Status::Active { is_toggled: true } | toggler::Status::Hovered { is_toggled: true });
+    toggler::Style {
+        background: Background::Color(if on { BRAND_BG } else { Color::TRANSPARENT }),
+        background_border_width: if on { 0.0 } else { 1.0 },
+        background_border_color: color!(0xd1d1d1),
+        foreground: Background::Color(if on { TEXT } else { color!(0xd1d1d1) }),
+        foreground_border_width: 0.0,
+        foreground_border_color: Color::TRANSPARENT,
+        text_color: None,
+        border_radius: None,
+        padding_ratio: 0.2,
+    }
 
 }
