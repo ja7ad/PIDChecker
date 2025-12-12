@@ -218,5 +218,79 @@ pub fn switch(_: &Theme, status: toggler::Status) -> toggler::Style {
         border_radius: None,
         padding_ratio: 0.2,
     }
+}
 
+/// Clickable list row (batch results).
+pub fn list_row(even: bool, selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let bg = match (selected, status) {
+            (true, _) => color!(0x343a42),
+            (false, button::Status::Hovered) => SUBTLE_HOVER,
+            (false, button::Status::Pressed) => SURFACE_PRESSED,
+            _ if even => color!(0x262626),
+            _ => SURFACE,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            text_color: TEXT,
+            border: Border {
+                color: if selected { ACCENT } else { Color::TRANSPARENT },
+                width: if selected { 1.0 } else { 0.0 },
+                radius: RADIUS_CONTROL.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+pub fn track(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color!(0x3d3d3d))),
+        border: Border { radius: 1.0.into(), ..Default::default() },
+        ..Default::default()
+    }
+}
+
+pub fn bar(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(ACCENT)),
+        border: Border { radius: 1.0.into(), ..Default::default() },
+        ..Default::default()
+    }
+}
+
+pub fn progress(_: &Theme) -> iced::widget::progress_bar::Style {
+    iced::widget::progress_bar::Style {
+        background: Background::Color(color!(0x3d3d3d)),
+        bar: Background::Color(ACCENT),
+        border: Border { radius: 1.0.into(), ..Default::default() },
+    }
+}
+
+pub fn row_style(even: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(if even { color!(0x262626) } else { SURFACE })),
+        border: Border { radius: RADIUS_CONTROL.into(), ..Default::default() },
+        ..Default::default()
+    }
+}
+
+/// Hyperlink-style button.
+pub fn link(_: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: None,
+        text_color: if status == button::Status::Hovered { color!(0x62abf5) } else { ACCENT },
+        border: Border::default(),
+        shadow: Shadow::default(),
+        snap: true,
+    }
+}
+
+pub fn muted(_: &Theme) -> text::Style {
+    text::Style { color: Some(MUTED) }
+}
+
+pub fn colored(c: Color) -> impl Fn(&Theme) -> text::Style {
+    move |_| text::Style { color: Some(c) }
 }
