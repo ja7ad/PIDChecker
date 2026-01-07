@@ -148,5 +148,115 @@ impl App {
                     st.configurations,
                     st.files,
                     s.checker.blocklist().len(),
+                    if s.checker.legacy_supported() { "pidgenx" } else { "unavailable" }
+                )
+            })
+            .unwrap_or_default();
+        let server = match &self.server {
+            Some(h) => badge(format!("API ● http://{}", h.addr), style::SUCCESS),
+            None => badge("API stopped", style::MUTED),
+        };
+        container(
+            row![
+                text(self.os_name.clone()).size(12),
+                text(db).size(12),
+                Space::new().width(Length::Fill),
+                text(self.notice.clone().unwrap_or_default()).size(12),
+                server,
+            ]
+            .spacing(16)
+            .align_y(Alignment::Center),
+        )
+        .padding([6, 16])
+        .width(Length::Fill)
+        .style(style::status_bar)
+        .into()
+    }
+
+    fn check_page(&self) -> El<'_> {
+        let can_check = !self.checking && !self.key_input.trim().is_empty();
+        let key_row = row![
+            input("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX", &self.key_input)
+                .on_input(Message::KeyInput)
+                .on_paste(Message::KeyInput)
+                .on_submit(Message::Check)
+                .font(style::mono())
+                .size(16)
+                .padding([9, 12]),
+            primary(if self.checking { "Checking…" } else { "Check Key" }, can_check.then_some(Message::Check)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let options = row![
+            switch(self.online, "Online MAK count / blocked check").on_toggle(Message::Online),
+            Space::new().width(Length::Fill),
+            secondary("Install & Activate (Windows)", (!self.key_input.is_empty()).then_some(Message::Install(Target::Windows))),
+            secondary("Install & Activate (Office)", (!self.key_input.is_empty()).then_some(Message::Install(Target::Office))),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let mut page = column![
+            title("Key Checker"),
+            subtitle("Detects the product from the key's group ID and validates it against the exact pkeyconfig."),
+            card(column![key_row, options].spacing(12)),
+        ]
+        .spacing(14);
+
+        if self.checking {
+            page = page.push(indeterminate(self.phase));
+        }
+        if let Some(r) = &self.report {
+            page = page.push(self.report_card(r));
+        }
+        if let Some(log) = &self.action_log {
+            page = page.push(card(column![
+                text("Install / activation output").size(15),
+                container(text(log.clone()).font(style::mono()).size(12)).padding(10).width(Length::Fill).style(style::console),
+            ].spacing(8)));
+        }
+        page.into()
+    }
+
+    fn report_card<'a>(&'a self, r: &'a KeyReport) -> El<'a> {
+        let mut header = row![
+            text(r.key.clone().unwrap_or_else(|| r.input.clone())).size(18).font(style::mono()),
+            status_badge(r),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center);
+        if let Some(d) = &r.details
+            && !d.key_type.is_empty() {
+                header = header.push(badge(d.key_type.clone(), style::ACCENT));
+            }
+        header = header.push(Space::new().width(Length::Fill));
+        header = header.push(secondary("Copy report", self.report_text().map(Message::CopyText)));
+
+        let mut col = column![header].spacing(6);
+        if !r.valid {
+            col = col.push(text(r.message.clone()).style(style::colored(style::WARNING)));
+        }
+        if let Some(d) = &r.details {
+            col = col.push(rule::horizontal(1));
+            for (label, value) in [
+                ("Product", format!("{} [{}]", d.product, d.category)),
+                ("Description", d.description.clone()),
+                ("Edition ID", d.edition_id.clone()),
+                ("License type", d.key_type.clone()),
+                ("Channel", d.channel.clone()),
+                ("Part number", d.part_number.clone()),
+                ("Product ID", d.product_id.clone()),
+                ("Extended PID", d.extended_pid.clone()),
+                ("SKU ID", d.sku_id.clone()),
+                ("Crypto ID", if d.crypto_id > 0 { format!("{} (0x{})", d.crypto_id, d.crypto_id_hex) } else { String::new() }),
+                ("Serial", d.serial.map(|s| s.to_string()).unwrap_or_default()),
+                ("Security value", d.security_value.clone().map(|s| format!("0x{s}")).unwrap_or_default()),
+                ("PKeyConfig", d.pkeyconfig.clone()),
+            ] {
+                if !value.trim().is_empty() && value != " []" {
+                    col = col.push(field(label, value));
+                }
+            }
 
 }
