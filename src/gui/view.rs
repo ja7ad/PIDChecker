@@ -258,5 +258,115 @@ impl App {
                     col = col.push(field(label, value));
                 }
             }
+            if !d.license_note.is_empty() {
+                col = col.push(text(d.license_note.clone()).size(13).style(style::muted));
+            }
+        }
+        col = col.push(rule::horizontal(1));
+        let mak = match (&r.activation, &r.activation_error) {
+            (Some(a), _) => match (a.remaining, &a.error_code) {
+                (Some(n), _) => format!("{n} activations remaining"),
+                (None, Some(c)) => format!("Not available ({c}){}", a.error_message.as_ref().map(|m| format!(" — {m}")).unwrap_or_default()),
+                _ => "Not available".into(),
+            },
+            (None, Some(e)) => format!("Error: {e}"),
+            (None, None) => "Not queried (only MAK keys are checked online)".into(),
+        };
+        col = col.push(field("Activation count", mak));
+        col = col.push(row![
+            text("Blocked").size(13).width(150).style(style::muted),
+            if r.blocked {
+                text(r.blocked_reason.clone().unwrap_or_else(|| "Yes".into())).size(13).style(style::colored(style::DANGER))
+            } else {
+                text("No").size(13).style(style::colored(style::SUCCESS))
+            }
+        ].spacing(8));
+        col = col.push(
+            text(if r.cached {
+                format!("Cached result from {} (checked in {} µs)", r.checked_at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S"), r.elapsed_us)
+            } else {
+                format!("Checked in {} µs", r.elapsed_us)
+            })
+            .size(11)
+            .style(style::muted),
+        );
+        card(col)
+    }
+
+    fn batch_page(&self) -> El<'_> {
+        let count = super::extract_keys(&self.batch_input.text()).len();
+        let editor = text_editor(&self.batch_input)
+            .placeholder("Paste keys or any text containing keys — they are detected automatically")
+            .on_action(Message::BatchEdit)
+            .font(style::mono())
+            .height(180);
+        let controls = row![
+            primary(if self.batch_running { "Checking…" } else { "Check All" }, (!self.batch_running && count > 0).then_some(Message::BatchCheck)),
+            secondary("Clear", Some(Message::BatchClear)),
+            secondary("Copy CSV", (!self.batch_results.is_empty()).then(|| Message::CopyText(super::to_csv(&self.batch_results)))),
+            secondary("Export CSV", (!self.batch_results.is_empty()).then_some(Message::BatchExport)),
+            Space::new().width(Length::Fill),
+            switch(self.online, "Online MAK check").on_toggle(Message::Online),
+            text(format!("{count} keys detected (max {})", self.config.checker.max_batch_size)).size(13).style(style::muted),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let mut page = column![
+            title("Batch Check"),
+            subtitle("Offline validation runs in parallel; MAK counts are fetched in a few combined requests."),
+            card(column![editor, controls].spacing(12)),
+        ]
+        .spacing(14);
+
+        if self.batch_running {
+            let done = self.batch_results.len();
+            page = page.push(card(
+                column![
+                    row![
+                        text(format!("Checking… {done} / {} keys", self.batch_total)).size(14),
+                        Space::new().width(Length::Fill),
+                        text(format!("{:.0}%", done as f32 * 100.0 / self.batch_total.max(1) as f32)).size(13).style(style::muted),
+                    ],
+                    progress_bar(0.0..=self.batch_total.max(1) as f32, done as f32).girth(4).style(style::progress),
+                ]
+                .spacing(8),
+            ));
+        }
+        if let Some(r) = self.selected.and_then(|i| self.batch_results.get(i)) {
+            page = page.push(column![
+                row![
+                    text("Selected key").size(15),
+                    Space::new().width(Length::Fill),
+                    secondary("Close", Some(Message::SelectResult(None))),
+                ]
+                .align_y(Alignment::Center),
+                self.report_card(r),
+            ].spacing(8));
+        }
+
+        if !self.batch_results.is_empty() {
+            let valid = self.batch_results.iter().filter(|r| r.valid).count();
+            let blocked = self.batch_results.iter().filter(|r| r.blocked).count();
+            let header = row![
+                text(format!("{} results", self.batch_results.len())).size(15),
+                badge(format!("{valid} valid"), style::SUCCESS),
+                badge(format!("{blocked} blocked"), style::DANGER),
+                badge(format!("{} invalid", self.batch_results.len() - valid), style::WARNING),
+                Space::new().width(Length::Fill),
+                text(format!("{:.1} ms", self.batch_elapsed_ms)).size(13).style(style::muted),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center);
+            let mut table = column![row![
+                text("Key").width(270).size(12).style(style::muted),
+                text("Status").width(110).size(12).style(style::muted),
+                text("Product / description").width(Length::Fill).size(12).style(style::muted),
+                text("Type").width(120).size(12).style(style::muted),
+                text("MAK").width(90).size(12).style(style::muted),
+            ]
+            .padding([4, 8])]
+            .spacing(2);
+            for (i, r) in self.batch_results.iter().enumerate() {
 
 }
