@@ -368,5 +368,115 @@ impl App {
             .padding([4, 8])]
             .spacing(2);
             for (i, r) in self.batch_results.iter().enumerate() {
+                let d = r.details.as_ref();
+                let mak = r
+                    .activation
+                    .as_ref()
+                    .map(|a| a.remaining.map(|n| n.to_string()).or(a.error_code.clone()).unwrap_or_else(|| "-".into()))
+                    .or(r.activation_error.as_ref().map(|_| "error".into()))
+                    .unwrap_or_default();
+                table = table.push(
+                    button(
+                        row![
+                            text(r.key.clone().unwrap_or_else(|| r.input.clone())).width(270).size(13).font(style::mono()),
+                            container(status_badge(r)).width(110),
+                            text(d.map(|d| if d.description.is_empty() { r.message.clone() } else { d.description.clone() }).unwrap_or_else(|| r.message.clone()))
+                                .width(Length::Fill)
+                                .size(13),
+                            text(d.map(|d| d.key_type.clone()).unwrap_or_default()).width(120).size(13),
+                            text(mak).width(90).size(13),
+                        ]
+                        .align_y(Alignment::Center),
+                    )
+                    .width(Length::Fill)
+                    .padding([4, 8])
+                    .style(style::list_row(i % 2 == 0, self.selected == Some(i)))
+                    .on_press(Message::SelectResult(Some(i))),
+                );
+            }
+            page = page.push(card(column![header, subtitle("Click a key to see its full report."), table].spacing(10)));
+        }
+        page.into()
+    }
+
+    fn blocklist_page(&self) -> El<'_> {
+        let total = self.services.as_ref().map(|s| s.checker.blocklist().len()).unwrap_or(0);
+        let has_input = !self.block_input.text().trim().is_empty();
+        let editor = text_editor(&self.block_input)
+            .placeholder("One or more keys, one per line")
+            .on_action(Message::BlockEdit)
+            .font(style::mono())
+            .height(160);
+        let actions = row![
+            input("Note / source (optional, e.g. ticket #42)", &self.block_note).on_input(Message::BlockNote),
+            primary("Add to blocklist", has_input.then_some(Message::BlockAdd)),
+            danger("Remove", has_input.then_some(Message::BlockRemove)),
+            secondary("Look up", has_input.then_some(Message::BlockLookup)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+        let mut page = column![
+            row![title("Blocked Keys"), Space::new().width(Length::Fill), badge(format!("{total} keys"), style::DANGER)]
+                .align_y(Alignment::Center),
+            subtitle("Stored in a redb database. Keys Microsoft reports as blocked (0x67) or from revoked ranges are recorded automatically (see Settings)."),
+            card(column![editor, actions].spacing(12)),
+        ]
+        .spacing(14);
+        if let Some(s) = &self.block_status {
+            page = page.push(card(text(s.clone()).font(style::mono()).size(13)));
+        }
+        page.into()
+    }
+
+    fn system_page(&self) -> El<'_> {
+        let mut page = column![
+            row![
+                title("This PC"),
+                Space::new().width(Length::Fill),
+                secondary(if self.sys_loading { "Loading…" } else { "Refresh" }, (!self.sys_loading).then_some(Message::SysRefresh)),
+                secondary("Detailed info (slmgr /dlv)", Some(Message::SysDetails)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+            subtitle("Windows and Office licenses installed on this machine (Software Protection Platform)."),
+        ]
+        .spacing(14);
+        if let Some(e) = &self.sys_error {
+            page = page.push(card(text(e.clone()).style(style::colored(style::DANGER))));
+        }
+        for l in &self.licenses {
+            let color = if l.status.starts_with("Licensed") { style::SUCCESS } else { style::WARNING };
+            page = page.push(card(
+                column![
+                    row![text(l.name.clone()).size(16), Space::new().width(Length::Fill), badge(l.status.clone(), color)]
+                        .align_y(Alignment::Center),
+                    field("Description", l.description.clone()),
+                    field("SKU ID", l.sku_id.clone()),
+                    field("Partial key", l.partial_key.clone()),
+                    field("Channel", l.channel.clone()),
+                    field("Grace remaining", if l.grace_minutes > 0 { format!("{} days", l.grace_minutes / 1440) } else { "-".into() }),
+                ]
+                .spacing(4),
+            ));
+        }
+        if let Some(d) = &self.sys_details {
+            page = page.push(card(container(text(d.clone()).font(style::mono()).size(12)).padding(10).width(Length::Fill).style(style::console)));
+        }
+        page.into()
+    }
+
+    fn server_page(&self) -> El<'_> {
+        let f = &self.form;
+        let running = self.server.is_some();
+        let input = |label: &'static str, value: &str, msg: fn(String) -> FormField| -> El<'_> {
+            column![
+                text(label).size(12).style(style::muted),
+                input("", value).on_input(move |v| Message::Form(msg(v))),
+            ]
+            .spacing(4)
+            .width(Length::FillPortion(1))
+            .into()
+        };
+        let switch = |label: &'static str, value: bool, msg: fn(bool) -> FormField| -> El<'_> {
 
 }
