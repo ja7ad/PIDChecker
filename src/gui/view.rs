@@ -478,5 +478,85 @@ impl App {
             .into()
         };
         let switch = |label: &'static str, value: bool, msg: fn(bool) -> FormField| -> El<'_> {
+            switch(value, label).on_toggle(move |v| Message::Form(msg(v))).into()
+        };
+
+        let status = row![
+            if running {
+                badge(format!("Running on http://{}", self.server.as_ref().unwrap().addr), style::SUCCESS)
+            } else {
+                badge("Stopped", style::MUTED)
+            },
+            Space::new().width(Length::Fill),
+            if running {
+                danger("Stop server", (!self.server_busy).then_some(Message::StopServer))
+            } else {
+                primary("Start server", (!self.server_busy).then_some(Message::StartServer))
+            },
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let form = column![
+            text("REST server").size(15),
+            row![input("Host", &f.host, FormField::Host), input("Port", &f.port, FormField::Port), input("Max batch size", &f.max_batch, FormField::MaxBatch)].spacing(12),
+            row![input("Rate limit: requests / minute", &f.rpm, FormField::Rpm), input("Rate limit: burst", &f.burst, FormField::Burst)].spacing(12),
+            row![
+                column![
+                    switch("Rate limiting", f.rate_limit, FormField::RateLimit),
+                    switch("Require API key", f.require_auth, FormField::RequireAuth),
+                    switch("Allow CORS (browsers)", f.cors, FormField::Cors),
+                ]
+                .spacing(10)
+                .width(Length::FillPortion(1)),
+                column![switch("Start server with the GUI", f.autostart, FormField::Autostart)]
+                .spacing(10)
+                .width(Length::FillPortion(1)),
+            ],
+        ]
+        .spacing(14);
+
+        let cache_len = self.services.as_ref().map(|s| s.checker.cache_len()).unwrap_or(0);
+        let checker_form = column![
+            text("Checker").size(15),
+            row![
+                input("Result cache lifetime (seconds)", &f.cache_ttl, FormField::CacheTtl),
+                input("Result cache size (entries)", &f.cache_max, FormField::CacheMax),
+            ]
+            .spacing(12),
+            row![
+                column![
+                    switch("Cache check results", f.cache_enabled, FormField::CacheEnabled),
+                    switch("Online MAK check by default", f.online_check, FormField::OnlineCheck),
+                ]
+                .spacing(10)
+                .width(Length::FillPortion(1)),
+                column![
+                    switch("Auto-add keys Microsoft reports blocked", f.record_blocked, FormField::RecordBlocked),
+                    switch("Auto-add keys from revoked ranges", f.record_revoked, FormField::RecordRevoked),
+                ]
+                .spacing(10)
+                .width(Length::FillPortion(1)),
+            ],
+            row![
+                text(format!("{cache_len} cached result(s)")).size(13).style(style::muted),
+                Space::new().width(Length::Fill),
+                secondary("Clear cache", (cache_len > 0).then_some(Message::ClearCache)),
+            ]
+            .align_y(Alignment::Center),
+        ]
+        .spacing(14);
+
+        let save = row![
+            primary("Save settings", Some(Message::SaveConfig)),
+            subtitle("Checker settings apply immediately; server settings on the next server start."),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center);
+
+        let base = format!("http://{}:{}/api/v1", self.config.server.host, self.config.server.port);
+        let endpoints = [
+            ("GET", "/health", "status, database stats"),
+            ("GET", "/check/{key}?online=true", "check one key"),
 
 }
