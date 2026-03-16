@@ -558,5 +558,85 @@ impl App {
         let endpoints = [
             ("GET", "/health", "status, database stats"),
             ("GET", "/check/{key}?online=true", "check one key"),
+            ("POST", "/check", "{\"key\": \"...\", \"online\": true}"),
+            ("POST", "/check/batch", "{\"keys\": [...]} — up to max batch size"),
+            ("GET", "/errors/{code}", "explain an activation error code"),
+            ("GET", "/blocklist/{key}", "blocked-key lookup"),
+            ("POST", "/blocklist", "admin: {\"keys\": [...], \"note\": \"...\"}"),
+            ("POST", "/blocklist/remove", "admin: {\"keys\": [...]}"),
+            ("GET/POST", "/apikeys", "admin: list / create API keys"),
+        ];
+        let mut ep = column![
+            text("Endpoints").size(15),
+            subtitle("Authenticate with `Authorization: Bearer pkc_…` or `X-API-Key: pkc_…`."),
+        ]
+        .spacing(4);
+        for (m, p, d) in endpoints {
+            ep = ep.push(
+                row![
+                    text(m).size(12).width(70).style(style::colored(style::ACCENT)).font(style::mono()),
+                    text(format!("{base}{p}")).size(12).font(style::mono()).width(Length::FillPortion(3)),
+                    text(d).size(12).style(style::muted).width(Length::FillPortion(2)),
+                ]
+                .spacing(8),
+            );
+        }
+
+        let mut page = column![title("Server & Settings"), card(status)].spacing(14);
+        if let Some(e) = &self.server_error {
+            page = page.push(card(text(e.clone()).style(style::colored(style::DANGER))));
+        }
+        page.push(card(form)).push(card(checker_form)).push(save).push(card(ep)).into()
+    }
+
+    fn keys_page(&self) -> El<'_> {
+        let create = row![
+            input("Name (e.g. billing-service)", &self.key_name).on_input(Message::KeyName).on_submit(Message::CreateKey),
+            pick_list(&Role::ALL[..], Some(self.key_role), Message::KeyRole).padding(8),
+            input("Expires in days (empty = never)", &self.key_days).on_input(Message::KeyDays).width(220),
+            primary("Generate key", (!self.key_name.trim().is_empty()).then_some(Message::CreateKey)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let mut page = column![
+            title("API Keys"),
+            subtitle("Opaque bearer tokens. Only a SHA-256 hash is stored; the token is shown once."),
+            card(create),
+        ]
+        .spacing(14);
+
+        if let Some(e) = &self.key_error {
+            page = page.push(card(text(e.clone()).style(style::colored(style::DANGER))));
+        }
+        if let Some(t) = &self.new_token {
+            page = page.push(card(
+                column![
+                    text("New API key — copy it now, it will not be shown again").size(15).style(style::colored(style::WARNING)),
+                    container(text(t.clone()).font(style::mono()).size(14)).padding(10).width(Length::Fill).style(style::console),
+                    row![primary("Copy", Some(Message::CopyText(t.clone()))), secondary("Done", Some(Message::DismissToken))].spacing(10),
+                ]
+                .spacing(10),
+            ));
+        }
+
+        let mut list = column![].spacing(6);
+        if self.api_keys.is_empty() {
+            list = list.push(subtitle("No API keys yet."));
+        }
+        for (i, k) in self.api_keys.iter().enumerate() {
+            let state = if k.revoked {
+                badge("revoked", style::DANGER)
+            } else if k.is_active() {
+                badge("active", style::SUCCESS)
+            } else {
+                badge("expired", style::WARNING)
+            };
+            let last = k.last_used_at.map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_else(|| "never".into());
+            list = list.push(
+                container(
+                    row![
+                        column![
+                            row![text(k.name.clone()).size(15), state, badge(k.role.to_string(), style::ACCENT)].spacing(8).align_y(Alignment::Center),
 
 }
