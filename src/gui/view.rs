@@ -638,5 +638,86 @@ impl App {
                     row![
                         column![
                             row![text(k.name.clone()).size(15), state, badge(k.role.to_string(), style::ACCENT)].spacing(8).align_y(Alignment::Center),
+                            text(format!(
+                                "{}…  ·  created {}  ·  last used {last}  ·  {} requests{}",
+                                k.prefix,
+                                k.created_at.format("%Y-%m-%d"),
+                                k.requests,
+                                k.expires_at.map(|e| format!("  ·  expires {}", e.format("%Y-%m-%d"))).unwrap_or_default()
+                            ))
+                            .size(12)
+                            .style(style::muted),
+                        ]
+                        .spacing(4)
+                        .width(Length::Fill),
+                        secondary("Revoke", (!k.revoked).then(|| Message::RevokeKey(k.id.clone()))),
+                        danger("Delete", Some(Message::DeleteKey(k.id.clone()))),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                )
+                .padding(10)
+                .style(style::row_style(i % 2 == 0)),
+            );
+        }
+        page.push(card(list)).into()
+    }
 
+    fn about_page(&self) -> El<'_> {
+        const WEBSITE: &str = env!("CARGO_PKG_HOMEPAGE");
+        let link = |label: &'static str, url: &'static str| -> El<'static> {
+            button(text(label).size(14)).padding(0).style(style::link).on_press(Message::OpenUrl(url)).into()
+        };
+        let info_row = |label: &'static str, value: El<'static>| -> El<'static> {
+            row![text(label).size(14).width(90).style(style::muted), value].spacing(12).align_y(Alignment::Center).into()
+        };
+        let header = row![
+            iced::widget::image(iced::widget::image::Handle::from_bytes(style::LOGO_PNG)).width(96).height(96),
+            column![
+                text("PID Key Checker").size(28),
+                text(format!("Version {} · Microsoft product key checker", env!("CARGO_PKG_VERSION"))).size(14).style(style::muted),
+                Space::new().height(8),
+                info_row("Author", text("Javad (BlackRouter)").size(14).into()),
+                info_row("Home", link(WEBSITE, WEBSITE)),
+            ]
+            .spacing(4),
+        ]
+        .spacing(24)
+        .align_y(Alignment::Center);
+
+        let description = column![
+            text("About").size(15),
+            text(
+                "PID Key Checker validates Microsoft Windows, Office and server product keys. It detects the product \
+                 straight from the key, shows its edition, license channel, Product ID and SKU, checks remaining \
+                 MAK activations and blocked status with Microsoft, and keeps a local database of blocked keys. \
+                 The same engine is available as a REST API and a command-line tool (pkc).",
+            )
+            .size(14)
+            .style(style::colored(style::TEXT_2)),
+        ]
+        .spacing(8);
+
+        let stats = self.services.as_ref().map(|s| {
+            let st = s.checker.stats();
+            format!(
+                "{} products · {} pkeyconfig files · {} blocked keys · legacy keys: {}",
+                st.configurations,
+                st.files,
+                s.checker.blocklist().len(),
+                if s.checker.legacy_supported() { "pidgenx" } else { "unavailable" }
+            )
+        });
+        let mut details = column![
+            text("Details").size(15),
+            field("Build", format!("{} {} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::ARCH, std::env::consts::OS)),
+            field("Config", self.config.path.display().to_string()),
+        ]
+        .spacing(6);
+        if let Some(st) = stats {
+            details = details.push(field("Database", st));
+        }
+
+        column![card(header), card(description), card(details)].spacing(14).into()
+    }
 }
