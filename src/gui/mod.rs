@@ -348,5 +348,311 @@ impl App {
                 self.report = Some(*r);
             }
             Message::Install(target) => {
+                let Ok(key) = ProductKey::parse(&self.key_input) else {
+                    self.notice = Some("Enter a valid key first".into());
+                    return Task::none();
+                };
+                self.action_log = Some("Installing key and activating… (requires administrator rights)".into());
+                let key = key.as_string();
+                return Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || system::install_and_activate(&key, target))
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .map_err(|e| format!("{e:#}"))
+                    },
+                    Message::Installed,
+                );
+            }
+            Message::Installed(r) => self.action_log = Some(r.unwrap_or_else(|e| format!("Error: {e}"))),
 
+            Message::BatchEdit(a) => self.batch_input.perform(a),
+            Message::BatchClear => {
+                self.batch_input = text_editor::Content::new();
+                self.batch_results.clear();
+                self.selected = None;
+            }
+            Message::BatchCheck => {
+                let Some(s) = self.services() else { return Task::none() };
+                let keys = extract_keys(&self.batch_input.text());
+                if keys.is_empty() || self.batch_running {
+                    return Task::none();
+                }
+                let max = self.config.checker.max_batch_size;
+                if keys.len() > max {
+                    self.notice = Some(format!("{} keys exceed the batch limit of {max} (see Settings)", keys.len()));
+                    return Task::none();
+                }
+                self.batch_running = true;
+                self.batch_results.clear();
+                self.selected = None;
+                self.batch_total = keys.len();
+                self.batch_started = Some(Instant::now());
+                let opts = CheckOptions { online: self.online };
+                // Online lookups are the slow part: send them in groups that fill
+                // the configured concurrency; offline-only batches use larger steps.
+                let step = if opts.online {
+                    (self.config.checker.online_chunk_size * self.config.checker.online_concurrency).max(1)
+                } else {
+                    250
+                };
+                let stream = iced::stream::channel(4, async move |mut tx| {
+                    for chunk in keys.chunks(step) {
+                        let reports = s.checker.check_many(chunk.to_vec(), opts).await;
+                        if tx.send(Message::BatchProgress(reports)).await.is_err() {
+                            return;
+                        }
+                    }
+                    let _ = tx.send(Message::BatchDone).await;
+                });
+                return Task::run(stream, |m| m);
+            }
+            Message::BatchProgress(mut r) => self.batch_results.append(&mut r),
+            Message::BatchDone => {
+                self.batch_running = false;
+                self.batch_elapsed_ms = self.batch_started.map(|t| t.elapsed().as_secs_f64() * 1000.0).unwrap_or(0.0);
+            }
+            Message::SelectResult(i) => self.selected = i,
+            Message::Tick => self.phase = (self.phase + 0.012) % 1.0,
+            Message::ClearCache => {
+                if let Some(s) = &self.services {
+                    let n = s.checker.cache_len();
+                    s.checker.clear_cache();
+                    self.notice = Some(format!("Cleared {n} cached result(s)"));
+                }
+            }
+            Message::BatchExport => {
+                if self.batch_results.is_empty() {
+                    return Task::none();
+                }
+                let dir = self.config.path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                let path = dir.join(format!("results-{}.csv", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+                self.notice = Some(match std::fs::write(&path, to_csv(&self.batch_results)) {
+                    Ok(()) => format!("Exported {} rows to {}", self.batch_results.len(), path.display()),
+                    Err(e) => format!("Export failed: {e}"),
+                });
+            }
+
+            Message::BlockEdit(a) => self.block_input.perform(a),
+            Message::BlockNote(n) => self.block_note = n,
+            Message::BlockAdd | Message::BlockRemove | Message::BlockLookup => {
+                let Some(s) = self.services() else { return Task::none() };
+                let keys = crate::core::key::find_keys(&self.block_input.text());
+                let bl = s.checker.blocklist();
+                let mut msg = match message {
+                    Message::BlockAdd => {
+                        let note = self.block_note.trim();
+                        let rec = BlockRecord {
+                            source: if note.is_empty() { "manual".into() } else { note.to_string() },
+                            error_code: None,
+                            added_at: chrono::Utc::now(),
+                        };
+                        match bl.insert_many(&keys, &rec) {
+                            Ok(n) => format!("Added {n} key(s), {} already present.", keys.len() - n),
+                            Err(e) => format!("Error: {e:#}"),
+                        }
+                    }
+                    Message::BlockRemove => match bl.remove_many(&keys) {
+                        Ok(n) => format!("Removed {n} key(s), {} were not listed.", keys.len() - n),
+                        Err(e) => format!("Error: {e:#}"),
+                    },
+                    _ => keys
+                        .iter()
+                        .map(|k| match bl.get(k) {
+                            Some(r) => format!(
+                                "{k}: BLOCKED — {}{} ({})",
+                                r.source,
+                                r.error_code.map(|c| format!(", code {c}")).unwrap_or_default(),
+                                r.added_at.format("%Y-%m-%d")
+                            ),
+                            None => format!("{k}: not blocked"),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                };
+                if keys.is_empty() {
+                    msg = "No product keys found in the text.".into();
+                }
+                self.block_status = Some(msg);
+            }
+            Message::SysRefresh => {
+                self.sys_loading = true;
+                self.sys_error = None;
+                return Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(system::installed_licenses)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .map_err(|e| format!("{e:#}"))
+                    },
+                    Message::SysLoaded,
+                );
+            }
+            Message::SysLoaded(r) => {
+                self.sys_loading = false;
+                match r {
+                    Ok(l) => self.licenses = l,
+                    Err(e) => self.sys_error = Some(e),
+                }
+            }
+            Message::SysDetails => {
+                return Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(system::license_details)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .map_err(|e| format!("{e:#}"))
+                    },
+                    Message::SysDetailsLoaded,
+                );
+            }
+            Message::SysDetailsLoaded(r) => self.sys_details = Some(r.unwrap_or_else(|e| format!("Error: {e}"))),
+
+            Message::Form(f) => match f {
+                FormField::Host(v) => self.form.host = v,
+                FormField::Port(v) => self.form.port = v,
+                FormField::MaxBatch(v) => self.form.max_batch = v,
+                FormField::Rpm(v) => self.form.rpm = v,
+                FormField::Burst(v) => self.form.burst = v,
+                FormField::RateLimit(v) => self.form.rate_limit = v,
+                FormField::RequireAuth(v) => self.form.require_auth = v,
+                FormField::Cors(v) => self.form.cors = v,
+                FormField::Autostart(v) => self.form.autostart = v,
+                FormField::OnlineCheck(v) => self.form.online_check = v,
+                FormField::RecordBlocked(v) => self.form.record_blocked = v,
+                FormField::RecordRevoked(v) => self.form.record_revoked = v,
+                FormField::CacheEnabled(v) => self.form.cache_enabled = v,
+                FormField::CacheTtl(v) => self.form.cache_ttl = v,
+                FormField::CacheMax(v) => self.form.cache_max = v,
+            },
+            Message::SaveConfig => {
+                let mut cfg = self.config.clone();
+                match self.form.apply(&mut cfg).map_err(anyhow::Error::msg).and_then(|_| cfg.save()) {
+                    Ok(()) => {
+                        self.config = cfg;
+                        self.server_error = None;
+                        // Checker settings apply immediately; server settings on restart.
+                        if let Some(s) = &self.services {
+                            s.checker.apply_settings(&self.config.checker_resolved());
+                        }
+                        self.notice = Some(format!(
+                            "Saved {}{}",
+                            self.config.path.display(),
+                            if self.server.is_some() { " — restart the server to apply" } else { "" }
+                        ));
+                    }
+                    Err(e) => self.server_error = Some(format!("{e:#}")),
+                }
+            }
+            Message::StartServer => {
+                if self.server.is_none() {
+                    return self.start_server();
+                }
+            }
+            Message::StopServer => {
+                if let Some(h) = self.server.take() {
+                    self.server_busy = true;
+                    return Task::perform(h.stop(), |_| Message::ServerStopped);
+                }
+            }
+            Message::ServerStopped => {
+                self.server_busy = false;
+                self.notice = Some("REST server stopped".into());
+            }
+
+            Message::KeyName(v) => self.key_name = v,
+            Message::KeyRole(r) => self.key_role = r,
+            Message::KeyDays(v) => self.key_days = v,
+            Message::CreateKey => {
+                let Some(s) = self.services() else { return Task::none() };
+                let days = match self.key_days.trim() {
+                    "" => None,
+                    d => match d.parse::<u32>() {
+                        Ok(n) => Some(n),
+                        Err(_) => {
+                            self.key_error = Some("Expiry must be a number of days".into());
+                            return Task::none();
+                        }
+                    },
+                };
+                match s.keys.create(&self.key_name, self.key_role, days) {
+                    Ok((_, token)) => {
+                        self.new_token = Some(token);
+                        self.key_name.clear();
+                        self.key_error = None;
+                    }
+                    Err(e) => self.key_error = Some(format!("{e:#}")),
+                }
+                self.refresh_keys();
+            }
+            Message::RevokeKey(id) => {
+                if let Some(s) = self.services()
+                    && let Err(e) = s.keys.revoke(&id) {
+                        self.key_error = Some(format!("{e:#}"));
+                    }
+                self.refresh_keys();
+            }
+            Message::DeleteKey(id) => {
+                if let Some(s) = self.services()
+                    && let Err(e) = s.keys.delete(&id) {
+                        self.key_error = Some(format!("{e:#}"));
+                    }
+                self.refresh_keys();
+            }
+            Message::DismissToken => self.new_token = None,
+        }
+        Task::none()
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        if self.checking || self.batch_running {
+            iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
+        } else {
+            Subscription::none()
+        }
+    }
+
+    fn refresh_keys(&mut self) {
+        if let Some(s) = &self.services {
+            self.api_keys = s.keys.list();
+        }
+    }
+
+    fn report_text(&self) -> Option<String> {
+        self.report.as_ref().map(render_text)
+    }
+}
+
+/// Keys pasted into a text area: every key found anywhere in the text.
+fn extract_keys(text: &str) -> Vec<String> {
+    crate::core::key::find_keys(text).iter().map(ProductKey::as_string).collect()
+}
+
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
+}
+
+pub fn to_csv(rows: &[KeyReport]) -> String {
+    let mut out = String::from("key,status,product,description,edition,license_type,channel,crypto_id,mak_remaining,blocked,blocked_reason,message\n");
+    for r in rows {
+        let d = r.details.clone().unwrap_or_default();
+        let mak = r.activation.as_ref().and_then(|a| a.remaining).map(|n| n.to_string()).unwrap_or_default();
+        let fields = [
+            r.key.clone().unwrap_or_else(|| r.input.clone()),
+            r.status.label().to_string(),
+            d.product,
+            d.description,
+            d.edition_id,
+            d.key_type,
+            d.channel,
+            if d.crypto_id > 0 { d.crypto_id.to_string() } else { String::new() },
+            mak,
+            r.blocked.to_string(),
+            r.blocked_reason.clone().unwrap_or_default(),
+            r.message.clone(),
+        ];
+        out.push_str(&fields.iter().map(|f| csv_field(f)).collect::<Vec<_>>().join(","));
+        out.push('\n');
+    }
+    out
 }
