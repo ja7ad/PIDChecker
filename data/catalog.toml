@@ -1,0 +1,395 @@
+# Product catalog for the pkeyconfig database.
+#
+# Entries are listed in lookup priority order: when the same SKU appears in
+# several files, the first product listed here wins. Files present on disk
+# but missing from this catalog are still loaded, after all listed ones.
+
+[[product]]
+name = "Windows 11 / 10 (latest)"
+category = "Windows"
+dir = "windows/11"
+
+[[product]]
+name = "Windows Server 2022"
+category = "Windows Server"
+dir = "windows-server/2022"
+
+[[product]]
+name = "Windows 10 1803 (17134)"
+category = "Windows"
+dir = "windows/10/17134"
+
+[[product]]
+name = "Windows 10 1703 (15063)"
+category = "Windows"
+dir = "windows/10/15063"
+
+[[product]]
+name = "Windows 10 1511 (10586)"
+category = "Windows"
+dir = "windows/10/10586"
+
+[[product]]
+name = "Windows 10 RTM (10240)"
+category = "Windows"
+dir = "windows/10/10240"
+
+[[product]]
+name = "Windows 8.1 / Server 2012 R2 (Update)"
+category = "Windows"
+dir = "windows/8.1/update"
+
+[[product]]
+name = "Windows 8.1 / Server 2012 R2"
+category = "Windows"
+dir = "windows/8.1/rtm"
+
+[[product]]
+name = "Windows 8 / Server 2012"
+category = "Windows"
+dir = "windows/8"
+
+[[product]]
+name = "Windows 7 SP1 / Server 2008 R2 / SBS 2011"
+category = "Windows"
+dir = "windows/7/sp1"
+
+[[product]]
+name = "Windows 7 / Server 2008 R2"
+category = "Windows"
+dir = "windows/7/rtm"
+
+[[product]]
+name = "Windows Vista SP2 / Server 2008 (6002.18005)"
+category = "Windows"
+dir = "windows/vista/sp2-18005"
+
+[[product]]
+name = "Windows Vista SP2 / Server 2008"
+category = "Windows"
+dir = "windows/vista/sp2"
+
+[[product]]
+name = "Windows Vista SP1 / Server 2008 (6001)"
+category = "Windows"
+dir = "windows/vista/sp1"
+
+[[product]]
+name = "Windows Vista RTM (6000)"
+category = "Windows"
+dir = "windows/vista/rtm"
+
+[[product]]
+name = "Windows Embedded 8 Industry"
+category = "Windows Embedded"
+dir = "windows-embedded/8-industry"
+
+[[product]]
+name = "Windows Embedded 8 Standard"
+category = "Windows Embedded"
+dir = "windows-embedded/8-standard"
+
+[[product]]
+name = "Windows Embedded 8 Standard Toolkit"
+category = "Windows Embedded"
+dir = "windows-embedded/8-standard-toolkit"
+
+[[product]]
+name = "Windows Embedded Standard 7"
+category = "Windows Embedded"
+dir = "windows-embedded/7-standard"
+
+[[product]]
+name = "Windows Embedded POSReady 7"
+category = "Windows Embedded"
+dir = "windows-embedded/7-posready"
+
+[[product]]
+name = "Windows Thin PC"
+category = "Windows Embedded"
+dir = "windows-embedded/thin-pc"
+
+[[product]]
+name = "Office 2021 / 2019 / 2016 / 365"
+category = "Office"
+dir = "office/2021"
+
+[[product]]
+name = "Office 2019"
+category = "Office"
+dir = "office/2019"
+
+[[product]]
+name = "Office 2016"
+category = "Office"
+dir = "office/2016"
+
+[[product]]
+name = "Office 2013"
+category = "Office"
+dir = "office/2013"
+
+[[product]]
+name = "Office 2013 Preview"
+category = "Office"
+dir = "office/2013-preview"
+
+[[product]]
+name = "Office 2010"
+category = "Office"
+dir = "office/2010"
+
+[[product]]
+name = "SharePoint / Project / Office Online Server 2016"
+category = "Server Apps"
+dir = "server-apps/sharepoint-2016"
+
+[[product]]
+name = "SharePoint / Project / Office Web Apps 2013"
+category = "Server Apps"
+dir = "server-apps/sharepoint-2013"
+
+[[product]]
+name = "SharePoint / Project / Office Web Apps 2010"
+category = "Server Apps"
+dir = "server-apps/sharepoint-2010"
+
+[[product]]
+name = "Exchange Server 2013"
+category = "Server Apps"
+dir = "server-apps/exchange-2013"
+
+[[product]]
+name = "Exchange Server 2010"
+category = "Server Apps"
+dir = "server-apps/exchange-2010"
+
+[[product]]
+name = "SQL Server 2017"
+category = "Server Apps"
+dir = "server-apps/sql-server-2017"
+
+[[product]]
+name = "SQL Server 2016"
+category = "Server Apps"
+dir = "server-apps/sql-server-2016"
+
+[[product]]
+name = "SQL Server 2014"
+category = "Server Apps"
+dir = "server-apps/sql-server-2014"
+
+[[product]]
+name = "SQL Server 2012"
+category = "Server Apps"
+dir = "server-apps/sql-server-2012"
+
+[[product]]
+name = "Dynamics CRM Server 2015"
+category = "Server Apps"
+dir = "server-apps/dynamics-crm-2015"
+
+[[product]]
+name = "Dynamics CRM Server 2013"
+category = "Server Apps"
+dir = "server-apps/dynamics-crm-2013"
+
+[[product]]
+name = "Dynamics CRM Server 2011"
+category = "Server Apps"
+dir = "server-apps/dynamics-crm-2011"
+
+[[product]]
+name = "System Center 2012"
+category = "Server Apps"
+dir = "server-apps/system-center-2012"
+
+[[product]]
+name = "System Center DPM 2010"
+category = "Server Apps"
+dir = "server-apps/system-center-dpm-2010"
+
+[[product]]
+name = "System Center VMM / Essentials 2010"
+category = "Server Apps"
+dir = "server-apps/system-center-vmm-essentials-2010"
+
+[[product]]
+name = "Forefront Threat Management Gateway 2010"
+category = "Server Apps"
+dir = "server-apps/forefront-tmg-2010"
+
+[[product]]
+name = "Forefront Protection 2010 for Exchange"
+category = "Server Apps"
+dir = "server-apps/forefront-exchange-2010"
+
+[[product]]
+name = "Forefront Protection 2010 for SharePoint"
+category = "Server Apps"
+dir = "server-apps/forefront-sharepoint-2010"
+
+[[product]]
+name = "Visual Studio 2017"
+category = "Visual Studio"
+dir = "visual-studio/2017"
+
+[[product]]
+name = "Visual Studio 2015"
+category = "Visual Studio"
+dir = "visual-studio/2015"
+
+[[product]]
+name = "Visual Studio 2015 RC"
+category = "Visual Studio"
+dir = "visual-studio/2015-rc"
+
+[[product]]
+name = "Visual Studio 2013"
+category = "Visual Studio"
+dir = "visual-studio/2013"
+
+[[product]]
+name = "Visual Studio 2012"
+category = "Visual Studio"
+dir = "visual-studio/2012"
+
+[[product]]
+name = "Visual Studio 2010"
+category = "Visual Studio"
+dir = "visual-studio/2010"
+
+[[product]]
+name = "Windows 10 Insider Preview build 14385"
+category = "Windows Insider"
+dir = "windows-insider/10-build-14385"
+
+[[product]]
+name = "Windows 10 Insider Preview build 14361"
+category = "Windows Insider"
+dir = "windows-insider/10-build-14361"
+
+[[product]]
+name = "Windows 10 Insider Preview build 14352"
+category = "Windows Insider"
+dir = "windows-insider/10-build-14352"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10176"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10176"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10166"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10166"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10162"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10162"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10159"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10159"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10158"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10158"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10151"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10151"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10147"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10147"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10135"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10135"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10130"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10130"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10122"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10122"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10074"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10074"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10061"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10061"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10051"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10051"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10049"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10049"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10041"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10041"
+
+[[product]]
+name = "Windows 10 Insider Preview build 10036"
+category = "Windows Insider"
+dir = "windows-insider/10-build-10036"
+
+[[product]]
+name = "Windows 10 Insider Preview build 9926"
+category = "Windows Insider"
+dir = "windows-insider/10-build-9926"
+
+[[product]]
+name = "Windows 10 Insider Preview build 9879"
+category = "Windows Insider"
+dir = "windows-insider/10-build-9879"
+
+[[product]]
+name = "Windows 10 Insider Preview build 9860"
+category = "Windows Insider"
+dir = "windows-insider/10-build-9860"
+
+[[product]]
+name = "Windows 10 Insider Preview build 9841"
+category = "Windows Insider"
+dir = "windows-insider/10-build-9841"
+
+[[product]]
+name = "Windows 10 Technical Preview (WinNext)"
+category = "Windows Insider"
+dir = "windows-insider/10-winnext"
+
+[[product]]
+name = "Windows 8.1 Preview (9431)"
+category = "Windows Insider"
+dir = "windows-insider/8.1-preview-9431"
+
+[[product]]
+name = "Windows 8 Consumer Preview"
+category = "Windows Insider"
+dir = "windows-insider/8-consumer-preview"
+
+[[product]]
+name = "Windows 8 Developer Preview"
+category = "Windows Insider"
+dir = "windows-insider/8-developer-preview"
