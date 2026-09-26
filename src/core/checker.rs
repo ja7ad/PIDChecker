@@ -628,5 +628,6 @@ pub fn render_text(r: &KeyReport) -> String {
     } else if let Some(e) = &r.activation_error {
         line("Activ. Count", &format!("Error: {e}"));
     }
-
+    line("Key Note", if r.blocked { r.blocked_reason.as_deref().unwrap_or("Blocked") } else { "-" });
+    s
 }
