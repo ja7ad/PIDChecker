@@ -1,0 +1,162 @@
+# Build Windows packages and publish a GitHub release when a version tag is pushed:
+#
+#   git tag v5.0.0 && git push origin v5.0.0
+#
+# Produces pidkeychecker-<version>-win-x64.zip and -win-arm64.zip (Windows 10 / 11)
+# with SHA-256 checksums. Both targets are built on the x64 Windows runner; the
+# MSVC ARM64 toolchain ships with Visual Studio there. The C runtime is linked
+# statically (.cargo/config.toml), so no VC++ redistributable is required.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v5.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check tag matches Cargo.toml version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:TAG) { throw "Tag $env:TAG does not match Cargo.toml version $version" }
+      - run: cargo test --release --locked
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: win-x64
+            target: x86_64-pc-windows-msvc
+            pidgenx: false   # x64 uses %WINDIR%\System32\pidgenx.dll
+          - name: win-arm64
+            target: aarch64-pc-windows-msvc
+            pidgenx: true    # the bundled pidgenx.dll is an ARM64 build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Verify binaries (architecture, subsystem, icon)
+        shell: pwsh
+        run: |
+          $expected = @{ 'x86_64-pc-windows-msvc' = 0x8664; 'aarch64-pc-windows-msvc' = 0xAA64 }['${{ matrix.target }}']
+          foreach ($exe in 'pidkeychecker.exe', 'pkc.exe') {
+            $b = [IO.File]::ReadAllBytes("target/${{ matrix.target }}/release/$exe")
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $machine = [BitConverter]::ToUInt16($b, $pe + 4)
+            $subsystem = [BitConverter]::ToUInt16($b, $pe + 24 + 68)
+            $resSize = [BitConverter]::ToUInt32($b, $pe + 24 + 112 + 8 * 2 + 4)
+            "{0}: machine 0x{1:X4}, subsystem {2}, resources {3} bytes" -f $exe, $machine, $subsystem, $resSize
+            if ($machine -ne $expected) { throw "$exe has the wrong architecture" }
+            if ($resSize -eq 0) { throw "$exe has no icon resource" }
+          }
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $name = "pidkeychecker-$version-${{ matrix.name }}"
+          $out = "target/dist/$name"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/pidkeychecker.exe", "target/${{ matrix.target }}/release/pkc.exe", README.md $out
+          Copy-Item data "$out/data" -Recurse
+          if ('${{ matrix.pidgenx }}' -eq 'true' -and (Test-Path pidgenx.dll)) { Copy-Item pidgenx.dll $out }
+          @'
+          # PID Key Checker configuration
+
+          [server]
+          host = "127.0.0.1"
+          port = 8080
+
+          [checker]
+          data_dir = "data"
+          pidgenx_path = "pidgenx.dll"
+          '@ | Set-Content -Encoding utf8 "$out/config.toml"
+          Compress-Archive -Path $out -DestinationPath "target/dist/$name.zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash "target/dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Set-Content -Encoding ascii -NoNewline "target/dist/$name.zip.sha256"
+          "zip=target/dist/$name.zip" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Smoke test (x64 only; ARM64 cannot run on this runner)
+        if: matrix.name == 'win-x64'
+        shell: pwsh
+        working-directory: target/dist/${{ steps.package.outputs.name }}
+        run: |
+          .\pkc.exe --version
+          $out = .\pkc.exe check --offline W269N-WFGWX-YVC9B-4J6C9-T83GX | Out-String
+          $out
+          if ($out -notmatch 'Key Status\s+: Valid') { throw "offline check failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.zip }}.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: PID Key Checker ${{ env.TAG }}
+          generate_release_notes: true
+          files: |
+            dist/*.zip
+            dist/*.sha256
+          body: |
+            Windows 10 / 11 builds. Download the zip for your CPU and extract it:
+
+            | Package | For |
+            |---|---|
+            | `*-win-x64.zip` | Intel / AMD 64-bit PCs |
+            | `*-win-arm64.zip` | ARM64 PCs (Snapdragon, Parallels on Apple Silicon) |
+
+            Run `pidkeychecker.exe` for the desktop app, or `pkc.exe serve` for the headless REST API. See README.md for details.
