@@ -239,10 +239,8 @@ fn status(config: &Config) -> Result<()> {
         }
         Err(e) => {
             println!("No server reachable at {url} ({e:#})");
-            if let Ok(owner) = std::fs::read_to_string(config_dir(config).join(instance::FILE_NAME))
-                && !owner.trim().is_empty()
-            {
-                println!("Last instance: {}", owner.trim());
+            if let Some(owner) = instance::owner(&config_dir(config)) {
+                println!("Last instance: {owner}");
             }
             std::process::exit(1);
         }

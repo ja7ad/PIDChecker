@@ -8,4 +8,5 @@ results-*.csv
 # Test material provided locally
 sample.txt
 pidkeychecker.lock
+pidkeychecker.owner
 .idea

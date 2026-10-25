@@ -4,12 +4,23 @@
 //! process may open, so at most one of them runs per data folder. The guard is
 //! an exclusive OS file lock on `pidkeychecker.lock` next to `config.toml`; the
 //! OS releases it when the process exits, even after a crash.
+//!
+//! Windows locks are mandatory (other processes cannot even read a locked
+//! file), so the owner description lives in a separate, unlocked
+//! `pidkeychecker.owner` file.
 
 use std::fs::{File, OpenOptions, TryLockError};
-use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 pub const FILE_NAME: &str = "pidkeychecker.lock";
+pub const OWNER_FILE: &str = "pidkeychecker.owner";
+
+/// Description of the process holding (or that last held) the lock in `dir`.
+pub fn owner(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(OWNER_FILE)).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
 
 pub struct InstanceLock {
     _file: File,
@@ -28,26 +39,17 @@ pub enum LockError {
 pub fn acquire(dir: &Path, role: &str) -> Result<InstanceLock, LockError> {
     let path = dir.join(FILE_NAME);
     let io = |source| LockError::Io { path: path.clone(), source };
-    let mut file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&path).map_err(io)?;
+    let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&path).map_err(io)?;
     match file.try_lock() {
         Ok(()) => {}
         Err(TryLockError::WouldBlock) => {
-            let mut owner = String::new();
-            let _ = file.read_to_string(&mut owner);
-            let owner = owner.trim();
-            return Err(LockError::AlreadyRunning {
-                owner: if owner.is_empty() { "unknown process".into() } else { owner.to_string() },
-                path,
-            });
+            return Err(LockError::AlreadyRunning { owner: owner(dir).unwrap_or_else(|| "unknown process".into()), path });
         }
         Err(TryLockError::Error(e)) => return Err(io(e)),
     }
     // Record the owner for the error message other instances show.
-    file.set_len(0).map_err(io)?;
-    file.rewind().map_err(io)?;
-    write!(file, "{role}, pid {}, started {}", std::process::id(), chrono::Local::now().format("%Y-%m-%d %H:%M:%S"))
-        .map_err(io)?;
-    file.flush().map_err(io)?;
+    let info = format!("{role}, pid {}, started {}", std::process::id(), chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    std::fs::write(dir.join(OWNER_FILE), info).map_err(io)?;
     Ok(InstanceLock { _file: file, path })
 }
 
