@@ -30,9 +30,3 @@ impl Services {
         Ok(Self { config, checker, keys })
     }
 }
-
-// Step 106
-
-// Step 107
-
-// Step 109

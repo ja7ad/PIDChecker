@@ -25,6 +25,7 @@ A Rust rewrite of PID Key Checker for Windows: it validates Microsoft product ke
 - *This PC*: the Windows and Office licenses installed on this machine, plus install and activate a key in one click.
 - Runs the REST server from the GUI, and manages API keys and settings.
 - Runs without a console window, and only one instance runs at a time.
+- Checks GitHub for a newer release in the background and offers to open the download page.
 
 **REST API and CLI**
 - An actix-web REST API with single, batch, blocklist, error-code and API-key endpoints.
@@ -104,6 +105,7 @@ API keys are opaque tokens (`pkc_` + 256 random bits). Only their SHA-256 hash i
 | checker | blocklist_db | blocked.redb | blocked-keys database |
 | checker | pidgenx_path, pidgenx_instances | pidgenx.dll, 0 | legacy backend (0 = one instance per CPU core) |
 | api | require_auth, keys_file | true, api_keys.json | |
+| app | check_updates | true | check GitHub for a newer release a few seconds after the GUI starts |
 
 ## Data
 

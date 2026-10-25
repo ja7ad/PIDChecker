@@ -1,8 +1,56 @@
 [package]
+build = "build.rs"
 name = "pidkeychecker"
-version = "0.1.0"
-edition = "2021"
+version = "5.0.0"
+description = "Microsoft product key checker (PID, MAK count, blocked status) with REST API and Iced GUI"
+authors = ["Javad (BlackRouter)"]
+homepage = "https://github.com/ja7ad/PIDChecker/"
+edition = "2024"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
+actix-cors = "0.7.2"
+actix-web = { version = "4.18.1", default-features = false, features = ["macros"] }
+anyhow = "1.0.104"
+base64 = "0.23.1"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6.7", features = ["derive"] }
+hex = "0.4.3"
+iced = { version = "0.14", features = ["tokio", "image-without-codecs"], optional = true }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+parking_lot = "0.13.0"
+quick-xml = "0.42.0"
+rand = "0.10.3"
+rayon = "1.12.0"
+redb = "4.4.0"
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["full"] }
+toml = "1.1.8"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
+
+[target."cfg(windows)".dependencies]
+libloading = "0.9.0"
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Registry"] }
+
+[[bin]]
+name = "pidkeychecker"
+path = "src/main.rs"
+required-features = ["gui"]
+
+[[bin]]
+name = "pkc"
+path = "src/bin/pkc.rs"
+
+[features]
+default = ["gui"]
+gui = ["dep:iced", "dep:image"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
