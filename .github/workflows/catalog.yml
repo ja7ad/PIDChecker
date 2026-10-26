@@ -1,0 +1,52 @@
+# Keep data/manifest.toml in step with the pkeyconfig catalog.
+#
+# After a push to main that changes anything under data/, regenerate the
+# manifest with `pkc catalog manifest` (which bumps its version when a file
+# changed) and commit it back. Running apps see the new version and sync.
+# Commits made with GITHUB_TOKEN do not trigger workflows, so this never loops.
+
+name: Catalog manifest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
+      - "!data/manifest.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-manifest
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  manifest:
+    name: Update manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build pkc
+        run: cargo build --release --locked --no-default-features --bin pkc
+      - name: Regenerate manifest
+        run: ./target/release/pkc -c config.toml catalog manifest
+      - name: Commit manifest
+        run: |
+          if [ -z "$(git status --porcelain -- data/manifest.toml)" ]; then
+            echo "manifest already up to date"
+            exit 0
+          fi
+          version=$(sed -n 's/^version = \([0-9]*\)/\1/p' data/manifest.toml | head -1)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/manifest.toml
+          git commit -m "chore(data): catalog manifest v$version"
+          git pull --rebase origin main
+          git push origin HEAD:main

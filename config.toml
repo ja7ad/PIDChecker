@@ -35,3 +35,8 @@ pidgenx_instances = 0
 [api]
 require_auth = true
 keys_file = "api_keys.json"
+
+[catalog]
+auto_sync = true
+url = "https://raw.githubusercontent.com/ja7ad/PIDChecker/main/data"
+interval_hours = 24

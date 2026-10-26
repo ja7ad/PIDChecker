@@ -2,6 +2,7 @@
 //! optional online MAK / blocked lookup.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -177,26 +178,44 @@ impl ResultCache {
     }
 }
 
-pub struct Checker {
+/// A loaded database and the state tied to its source indices; swapped as a
+/// unit when the catalog is reloaded.
+struct Loaded {
     db: KeyDatabase,
+    /// Legacy sources ordered most-recently-matched first.
+    #[cfg(windows)]
+    legacy_order: parking_lot::Mutex<Vec<usize>>,
+}
+
+impl Loaded {
+    fn load(dir: &Path) -> Result<Arc<Self>> {
+        let db = KeyDatabase::load(dir)
+            .map_err(|e| anyhow::anyhow!("loading pkeyconfig data from {}: {e}", dir.display()))?;
+        for e in &db.errors {
+            tracing::warn!("{e}");
+        }
+        Ok(Arc::new(Self {
+            #[cfg(windows)]
+            legacy_order: parking_lot::Mutex::new(db.legacy_sources.clone()),
+            db,
+        }))
+    }
+}
+
+pub struct Checker {
+    data_dir: PathBuf,
+    loaded: parking_lot::RwLock<Arc<Loaded>>,
     blocklist: Blocklist,
     mak: MakClient,
     settings: parking_lot::RwLock<RuntimeSettings>,
     cache: parking_lot::Mutex<ResultCache>,
     #[cfg(windows)]
     pidgenx: Option<super::pidgenx::Pool>,
-    /// Legacy sources ordered most-recently-matched first.
-    #[cfg(windows)]
-    legacy_order: parking_lot::Mutex<Vec<usize>>,
 }
 
 impl Checker {
     pub fn new(cfg: &CheckerConfig) -> Result<Self> {
-        let db = KeyDatabase::load(&cfg.data_dir)
-            .map_err(|e| anyhow::anyhow!("loading pkeyconfig data from {}: {e}", cfg.data_dir.display()))?;
-        for e in &db.errors {
-            tracing::warn!("{e}");
-        }
+        let loaded = Loaded::load(&cfg.data_dir)?;
         let blocklist = Blocklist::open(&cfg.blocklist_db)?;
         let mak = MakClient::new(
             Duration::from_secs(cfg.online_timeout_secs),
@@ -224,20 +243,33 @@ impl Checker {
             None
         };
         Ok(Self {
+            data_dir: cfg.data_dir.clone(),
+            loaded: parking_lot::RwLock::new(loaded),
             blocklist,
             mak,
             settings: parking_lot::RwLock::new(RuntimeSettings::from_config(cfg)),
             cache: parking_lot::Mutex::new(ResultCache::default()),
-            #[cfg(windows)]
-            legacy_order: parking_lot::Mutex::new(db.legacy_sources.clone()),
-            db,
             #[cfg(windows)]
             pidgenx,
         })
     }
 
     pub fn stats(&self) -> DbStats {
-        self.db.stats()
+        self.loaded.read().db.stats()
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    /// Re-read the pkeyconfig data directory and swap it in. Checks already
+    /// running finish against the previous database.
+    pub fn reload(&self) -> Result<DbStats> {
+        let loaded = Loaded::load(&self.data_dir)?;
+        let stats = loaded.db.stats();
+        *self.loaded.write() = loaded;
+        self.clear_cache();
+        Ok(stats)
     }
 
     pub fn blocklist(&self) -> &Blocklist {
@@ -337,7 +369,9 @@ impl Checker {
         if !decoded.checksum_valid {
             return KeyReport::new(input, KeyStatus::InvalidChecksum, "Key checksum does not match");
         }
-        let Some(m) = self.db.lookup(decoded.group, decoded.serial) else {
+        let loaded = self.loaded.read().clone();
+        let db = &loaded.db;
+        let Some(m) = db.lookup(decoded.group, decoded.serial) else {
             let mut r = KeyReport::new(input, KeyStatus::UnknownProduct, "No pkeyconfig contains this key's group");
             r.details = Some(KeyDetails {
                 crypto_id: decoded.group,
@@ -370,10 +404,10 @@ impl Checker {
             security_value: Some(format!("{:x}", decoded.security)),
             upgrade: decoded.upgrade,
             is_randomized: cfg.is_randomized,
-            pkeyconfig: self.db.source(m.entry.sources[0]).map(|s| s.name.clone()).unwrap_or_default(),
-            product: self.db.source(m.entry.sources[0]).map(|s| s.product.clone()).unwrap_or_default(),
-            category: self.db.source(m.entry.sources[0]).map(|s| s.category.clone()).unwrap_or_default(),
-            algorithm: self.db.algorithm(decoded.group).unwrap_or("msft:rm/algorithm/pkey/2009").to_string(),
+            pkeyconfig: db.source(m.entry.sources[0]).map(|s| s.name.clone()).unwrap_or_default(),
+            product: db.source(m.entry.sources[0]).map(|s| s.product.clone()).unwrap_or_default(),
+            category: db.source(m.entry.sources[0]).map(|s| s.category.clone()).unwrap_or_default(),
+            algorithm: db.algorithm(decoded.group).unwrap_or("msft:rm/algorithm/pkey/2009").to_string(),
             partial_key: String::new(),
         });
         report
@@ -394,8 +428,10 @@ impl Checker {
             return KeyReport::new(input, KeyStatus::Unsupported, "Legacy (pkey2005) key: pidgenx.dll not available");
         };
         let key_str = key.as_string();
-        let order = self.legacy_order.lock().clone();
-        let files: Vec<&std::path::Path> = order.iter().map(|&i| self.db.sources[i].path.as_path()).collect();
+        let loaded = self.loaded.read().clone();
+        let db = &loaded.db;
+        let order = loaded.legacy_order.lock().clone();
+        let files: Vec<&std::path::Path> = order.iter().map(|&i| db.sources[i].path.as_path()).collect();
         let started = Instant::now();
         let outcome = pgx.check_first(&key_str, &files);
         tracing::debug!("pidgenx: {key_str} resolved in {:?}", started.elapsed());
@@ -404,13 +440,13 @@ impl Checker {
                 let src = order[pos];
                 if pos > 0 {
                     // Most-recently-matched first: batches of similar keys get faster.
-                    let mut o = self.legacy_order.lock();
+                    let mut o = loaded.legacy_order.lock();
                     if let Some(i) = o.iter().position(|&x| x == src) {
                         let v = o.remove(i);
                         o.insert(0, v);
                     }
                 }
-                let entry = self.db.by_act_config_id(&res.act_config_id);
+                let entry = db.by_act_config_id(&res.act_config_id);
                 let mut report = KeyReport::new(input, KeyStatus::Valid, "Valid key");
                 report.details = Some(KeyDetails {
                     product_id: res.product_id,
@@ -424,9 +460,9 @@ impl Checker {
                     part_number: res.sub_type,
                     crypto_id: entry.map(|e| e.config.ref_group_id).unwrap_or_default(),
                     crypto_id_hex: entry.map(|e| format!("{:x}", e.config.ref_group_id)).unwrap_or_default(),
-                    pkeyconfig: self.db.sources[src].name.clone(),
-                    product: self.db.sources[src].product.clone(),
-                    category: self.db.sources[src].category.clone(),
+                    pkeyconfig: db.sources[src].name.clone(),
+                    product: db.sources[src].product.clone(),
+                    category: db.sources[src].category.clone(),
                     algorithm: "msft:rm/algorithm/pkey/2005".into(),
                     ..Default::default()
                 });

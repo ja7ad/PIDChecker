@@ -1,4 +1,5 @@
 pub mod blocklist;
+pub mod catalog;
 pub mod checker;
 pub mod codes;
 pub mod database;

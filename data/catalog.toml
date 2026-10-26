@@ -110,6 +110,11 @@ category = "Windows Embedded"
 dir = "windows-embedded/thin-pc"
 
 [[product]]
+name = "Office 2024 / 2021 / 2019 / 2016 / 365"
+category = "Office"
+dir = "office/2024"
+
+[[product]]
 name = "Office 2021 / 2019 / 2016 / 365"
 category = "Office"
 dir = "office/2021"

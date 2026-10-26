@@ -56,6 +56,8 @@ pub struct KeyDatabase {
     legacy_ranges: Vec<LegacyCoverage>,
     pub errors: Vec<String>,
     pub load_time: Duration,
+    /// `version` from `manifest.toml` (0 without one).
+    pub catalog_version: u32,
 }
 
 /// (source index, share of legacy groups, legacy (group, start, end) ranges)
@@ -68,6 +70,7 @@ pub struct Match<'a> {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DbStats {
+    pub catalog_version: u32,
     pub files: usize,
     pub legacy_files: usize,
     pub groups: usize,
@@ -103,7 +106,8 @@ impl KeyDatabase {
 
         let parsed: Vec<Result<PKeyConfig>> = sources.par_iter().map(|s| PKeyConfig::load(&s.path)).collect();
 
-        let mut db = KeyDatabase { sources, ..Default::default() };
+        let catalog_version = super::catalog::Manifest::read(dir).map(|m| m.version).unwrap_or(0);
+        let mut db = KeyDatabase { sources, catalog_version, ..Default::default() };
         for (idx, result) in parsed.into_iter().enumerate() {
             match result {
                 Ok(cfg) => db.merge(idx, cfg),
@@ -225,6 +229,7 @@ impl KeyDatabase {
 
     pub fn stats(&self) -> DbStats {
         DbStats {
+            catalog_version: self.catalog_version,
             files: self.sources.len(),
             legacy_files: self.legacy_sources.len(),
             groups: self.groups.len(),

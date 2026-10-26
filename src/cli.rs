@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use crate::apikeys::{ApiKeyStore, Role};
 use crate::config::Config;
 use crate::core::blocklist::{BlockRecord, Blocklist};
+use crate::core::catalog::{self, Manifest};
 use crate::core::checker::{render_text, CheckOptions};
 use crate::core::codes;
 use crate::core::key::find_keys;
@@ -58,6 +59,9 @@ pub enum Command {
     /// Show configuration
     #[command(subcommand)]
     Config(ConfigCmd),
+    /// Versioned pkeyconfig catalog: status, sync from GitHub, regenerate the manifest
+    #[command(subcommand)]
+    Catalog(CatalogCmd),
     /// Explain an activation / licensing error code (e.g. 0x67, 0xC004C003)
     Error { code: String },
     /// Diagnostics: time PidGenX calls (Windows only)
@@ -105,6 +109,16 @@ pub enum BlocklistCmd {
     Remove { keys: Vec<String> },
     /// Show whether keys are blocked and why
     Check { keys: Vec<String> },
+}
+
+#[derive(Subcommand)]
+pub enum CatalogCmd {
+    /// Local and published catalog versions
+    Status,
+    /// Download catalog updates now (stop the GUI / server first; they sync on their own)
+    Sync,
+    /// Regenerate data/manifest.toml, bumping its version if any file changed (maintainers)
+    Manifest,
 }
 
 #[derive(Subcommand)]
@@ -186,6 +200,7 @@ pub fn run(cli: Cli, command: Command) -> Result<()> {
             println!("# {}\n{}", config.path.display(), toml::to_string_pretty(&config)?);
             Ok(())
         }
+        Command::Catalog(cmd) => catalog_cmd(&config, cmd),
         Command::Error { code } => {
             explain(&code);
             Ok(())
@@ -216,7 +231,11 @@ fn serve(config: Config) -> Result<()> {
             if rl.enabled { format!("{} req/min, burst {}", rl.requests_per_minute, rl.burst) } else { "disabled".into() }
         );
         let handle = server::spawn(&services.config, services.checker.clone(), services.keys.clone())?;
+        let sync = catalog::spawn_auto_sync(services.checker.clone(), &services.config.catalog);
         tokio::signal::ctrl_c().await?;
+        if let Some(t) = sync {
+            t.abort();
+        }
         tracing::info!("shutting down");
         handle.stop().await;
         Ok(())
@@ -343,6 +362,58 @@ fn blocklist(config: &Config, cmd: BlocklistCmd) -> Result<()> {
                     None => println!("{k}  not blocked"),
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+fn catalog_cmd(config: &Config, cmd: CatalogCmd) -> Result<()> {
+    let dir = config.checker_resolved().data_dir;
+    let url = &config.catalog.url;
+    match cmd {
+        CatalogCmd::Status => {
+            let local = Manifest::read(&dir).map(|m| format!("v{}", m.version)).unwrap_or_else(|| "none".into());
+            println!("local      : {local} ({})", dir.display());
+            let rt = tokio::runtime::Runtime::new()?;
+            let remote = rt.block_on(async {
+                let text = reqwest::get(format!("{}/{}", url.trim_end_matches('/'), catalog::MANIFEST))
+                    .await?
+                    .error_for_status()?
+                    .text()
+                    .await?;
+                anyhow::Ok(toml::from_str::<Manifest>(&text)?.version)
+            });
+            match remote {
+                Ok(v) => println!("published  : v{v} ({url})"),
+                Err(e) => println!("published  : unavailable ({e:#})"),
+            }
+            println!("auto sync  : {}", if config.catalog.auto_sync { format!("every {} h", config.catalog.interval_hours) } else { "disabled".into() });
+        }
+        CatalogCmd::Sync => {
+            let _lock = lock(config, "catalog sync")?;
+            let rt = tokio::runtime::Runtime::new()?;
+            match rt.block_on(catalog::sync(&dir, url))? {
+                Some(r) => {
+                    println!("{}", r.summary());
+                    for f in r.updated {
+                        println!("  updated {f}");
+                    }
+                    for f in r.removed {
+                        println!("  removed {f}");
+                    }
+                }
+                None => println!("catalog is up to date"),
+            }
+        }
+        CatalogCmd::Manifest => {
+            let (m, changed) = catalog::update_manifest(&dir)?;
+            println!(
+                "{} {} (v{}, {} files)",
+                if changed { "wrote" } else { "unchanged:" },
+                dir.join(catalog::MANIFEST).display(),
+                m.version,
+                m.files.len()
+            );
         }
     }
     Ok(())

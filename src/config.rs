@@ -120,6 +120,33 @@ impl Default for ApiConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CatalogConfig {
+    /// Download pkeyconfig catalog updates and reload them without a restart.
+    pub auto_sync: bool,
+    /// Base URL of the published `data/` folder (the one holding `manifest.toml`).
+    pub url: String,
+    /// Hours between update checks; one also runs at startup.
+    pub interval_hours: u64,
+}
+
+impl Default for CatalogConfig {
+    fn default() -> Self {
+        Self {
+            auto_sync: true,
+            url: "https://raw.githubusercontent.com/ja7ad/PIDChecker/main/data".into(),
+            interval_hours: 24,
+        }
+    }
+}
+
+impl CatalogConfig {
+    pub fn interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.interval_hours.max(1) * 3600)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
@@ -127,6 +154,7 @@ pub struct Config {
     pub rate_limit: RateLimitConfig,
     pub checker: CheckerConfig,
     pub api: ApiConfig,
+    pub catalog: CatalogConfig,
     #[serde(skip)]
     pub path: PathBuf,
 }

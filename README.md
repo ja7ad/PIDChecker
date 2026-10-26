@@ -1,4 +1,4 @@
-# PID Key Checker 5
+# PID Key Checker
 
 A Rust rewrite of PID Key Checker for Windows: it validates Microsoft product keys offline, shows the product, edition, channel and IDs, checks remaining MAK activations and blocked status with Microsoft, and exposes everything through a Fluent-style desktop app (Iced), a CLI and a REST API (actix-web).
 
@@ -105,11 +105,24 @@ API keys are opaque tokens (`pkc_` + 256 random bits). Only their SHA-256 hash i
 | checker | blocklist_db | blocked.redb | blocked-keys database |
 | checker | pidgenx_path, pidgenx_instances | pidgenx.dll, 0 | legacy backend (0 = one instance per CPU core) |
 | api | require_auth, keys_file | true, api_keys.json | |
+| catalog | auto_sync, url, interval_hours | true, GitHub `data/`, 24 | pkeyconfig catalog updates (see below) |
 | app | check_updates | true | check GitHub for a newer release a few seconds after the GUI starts |
 
 ## Data
 
-`data/` is organised as `<category>/<product>/pkeyconfig[-csvlk|-downlevel|-kmshost].xrm-ms`. `data/catalog.toml` names each product and sets lookup priority. Files that aren't in the catalog are still loaded, after the listed ones. Error-code explanations come from Microsoft's licensing-and-activation support articles (`docs/activation-error-codes.json`) and are embedded in the binary.
+`data/` is organised as `<category>/<product>/pkeyconfig[-csvlk|-downlevel|-kmshost].xrm-ms`. `data/catalog.toml` names each product and sets lookup priority. Files that aren't in the catalog are still loaded, after the listed ones.
+
+### Catalog updates
+
+The catalog is versioned by `data/manifest.toml`, which lists every data file with its SHA-256. The GUI and `pkc serve` check the published manifest at `[catalog] url` (by default this repository's `data/` folder on GitHub) at startup and every `interval_hours`. If its version is newer, they download only the files whose hash differs, verify each one, move them into place, and reload the database while running. No restart or app update is needed. Set `auto_sync = false` (or switch it off in Server & Settings) to turn this off.
+
+```bash
+pkc catalog status     # local vs published version
+pkc catalog sync       # update now (when no GUI/server is running)
+pkc catalog manifest   # maintainers: regenerate data/manifest.toml, bumping the version
+```
+
+To publish new pkeyconfigs, add the files under `data/`, list the product in `catalog.toml`, and push to `main`. The *Catalog manifest* GitHub Action (`.github/workflows/catalog.yml`) regenerates `data/manifest.toml`, bumps its version and commits it, and running apps then pick the update up. Error-code explanations come from Microsoft's licensing-and-activation support articles (`docs/activation-error-codes.json`) and are embedded in the binary.
 
 ## Build
 

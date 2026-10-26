@@ -144,9 +144,10 @@ impl App {
             .map(|s| {
                 let st = s.checker.stats();
                 format!(
-                    "{} products · {} pkeyconfigs · {} blocked keys · legacy keys: {}",
+                    "{} products · {} pkeyconfigs (catalog v{}) · {} blocked keys · legacy keys: {}",
                     st.configurations,
                     st.files,
+                    st.catalog_version,
                     s.checker.blocklist().len(),
                     if s.checker.legacy_supported() { "pidgenx" } else { "unavailable" }
                 )
@@ -547,6 +548,28 @@ impl App {
         ]
         .spacing(14);
 
+        let catalog_version = self.services.as_ref().map(|s| s.checker.stats().catalog_version).unwrap_or(0);
+        let catalog_form = column![
+            text("pkeyconfig catalog").size(15),
+            switch("Sync catalog updates automatically", f.catalog_sync, FormField::CatalogSync),
+            row![
+                text(format!(
+                    "Catalog v{catalog_version} · checked at startup and every {} h from {}",
+                    self.config.catalog.interval_hours, self.config.catalog.url
+                ))
+                .size(13)
+                .style(style::muted),
+                Space::new().width(Length::Fill),
+                secondary(
+                    if self.catalog_syncing { "Syncing…" } else { "Sync now" },
+                    (!self.catalog_syncing && self.services.is_some()).then_some(Message::CatalogSync(true)),
+                ),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(14);
+
         let save = row![
             primary("Save settings", Some(Message::SaveConfig)),
             subtitle("Checker settings apply immediately; server settings on the next server start."),
@@ -586,7 +609,7 @@ impl App {
         if let Some(e) = &self.server_error {
             page = page.push(card(text(e.clone()).style(style::colored(style::DANGER))));
         }
-        page.push(card(form)).push(card(checker_form)).push(save).push(card(ep)).into()
+        page.push(card(form)).push(card(checker_form)).push(card(catalog_form)).push(save).push(card(ep)).into()
     }
 
     fn keys_page(&self) -> El<'_> {

@@ -13,6 +13,7 @@ use iced::{Size, Subscription, Task};
 use crate::apikeys::{ApiKey, Role};
 use crate::config::Config;
 use crate::core::blocklist::BlockRecord;
+use crate::core::catalog;
 use crate::core::checker::{render_text, CheckOptions, KeyReport};
 use crate::core::key::ProductKey;
 use crate::server::{self, ServerHandle};
@@ -80,6 +81,7 @@ pub struct ServerForm {
     pub cache_enabled: bool,
     pub cache_ttl: String,
     pub cache_max: String,
+    pub catalog_sync: bool,
 }
 
 impl ServerForm {
@@ -100,6 +102,7 @@ impl ServerForm {
             cache_enabled: c.checker.cache_enabled,
             cache_ttl: c.checker.cache_ttl_secs.to_string(),
             cache_max: c.checker.cache_max_entries.to_string(),
+            catalog_sync: c.catalog.auto_sync,
         }
     }
 
@@ -120,6 +123,7 @@ impl ServerForm {
         c.checker.cache_enabled = self.cache_enabled;
         c.checker.cache_ttl_secs = num(&self.cache_ttl, "Cache lifetime")?.max(1);
         c.checker.cache_max_entries = num(&self.cache_max, "Cache size")?.max(1) as usize;
+        c.catalog.auto_sync = self.catalog_sync;
         Ok(())
     }
 }
@@ -141,6 +145,7 @@ pub enum FormField {
     CacheEnabled(bool),
     CacheTtl(String),
     CacheMax(String),
+    CatalogSync(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +182,9 @@ pub enum Message {
     SysLoaded(Result<Vec<InstalledLicense>, String>),
     SysDetails,
     SysDetailsLoaded(Result<String, String>),
+    // Catalog (`true` = requested by the user)
+    CatalogSync(bool),
+    CatalogSynced(bool, Result<Option<String>, String>),
     // Server
     Form(FormField),
     SaveConfig,
@@ -237,6 +245,8 @@ pub struct App {
     new_token: Option<String>,
     api_keys: Vec<ApiKey>,
     key_error: Option<String>,
+
+    catalog_syncing: bool,
 }
 
 impl App {
@@ -285,16 +295,36 @@ impl App {
             new_token: None,
             api_keys,
             key_error: None,
+            catalog_syncing: false,
         };
         let mut tasks = vec![Task::perform(async { system::os_name() }, |n| Message::Notice(format!("os:{n}")))];
         if app.config.server.autostart {
             tasks.push(app.start_server());
+        }
+        if app.config.catalog.auto_sync {
+            tasks.push(app.sync_catalog(false));
         }
         (app, Task::batch(tasks))
     }
 
     fn services(&self) -> Option<Arc<Services>> {
         self.services.clone()
+    }
+
+    /// Fetch catalog updates in the background; the checker reloads in place.
+    fn sync_catalog(&mut self, manual: bool) -> Task<Message> {
+        let Some(s) = self.services() else { return Task::none() };
+        if self.catalog_syncing {
+            return Task::none();
+        }
+        self.catalog_syncing = true;
+        let url = self.config.catalog.url.clone();
+        Task::perform(
+            async move {
+                catalog::sync_and_reload(&s.checker, &url).await.map(|r| r.map(|r| r.summary())).map_err(|e| format!("{e:#}"))
+            },
+            move |r| Message::CatalogSynced(manual, r),
+        )
     }
 
     fn start_server(&mut self) -> Task<Message> {
@@ -524,8 +554,25 @@ impl App {
                 FormField::CacheEnabled(v) => self.form.cache_enabled = v,
                 FormField::CacheTtl(v) => self.form.cache_ttl = v,
                 FormField::CacheMax(v) => self.form.cache_max = v,
+                FormField::CatalogSync(v) => self.form.catalog_sync = v,
             },
+            Message::CatalogSync(manual) => return self.sync_catalog(manual),
+            Message::CatalogSynced(manual, r) => {
+                self.catalog_syncing = false;
+                match r {
+                    Ok(Some(summary)) => self.notice = Some(summary),
+                    Ok(None) if manual => self.notice = Some("Catalog is up to date".into()),
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!("catalog sync failed: {e}");
+                        if manual {
+                            self.notice = Some(format!("Catalog sync failed: {e}"));
+                        }
+                    }
+                }
+            }
             Message::SaveConfig => {
+                let was_syncing = self.config.catalog.auto_sync;
                 let mut cfg = self.config.clone();
                 match self.form.apply(&mut cfg).map_err(anyhow::Error::msg).and_then(|_| cfg.save()) {
                     Ok(()) => {
@@ -540,6 +587,9 @@ impl App {
                             self.config.path.display(),
                             if self.server.is_some() { " — restart the server to apply" } else { "" }
                         ));
+                        if self.config.catalog.auto_sync && !was_syncing {
+                            return self.sync_catalog(false);
+                        }
                     }
                     Err(e) => self.server_error = Some(format!("{e:#}")),
                 }
@@ -605,11 +655,17 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        if self.checking || self.batch_running {
+        let tick = if self.checking || self.batch_running {
             iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
         } else {
             Subscription::none()
-        }
+        };
+        let sync = if self.config.catalog.auto_sync {
+            iced::time::every(self.config.catalog.interval()).map(|_| Message::CatalogSync(false))
+        } else {
+            Subscription::none()
+        };
+        Subscription::batch([tick, sync])
     }
 
     fn refresh_keys(&mut self) {
